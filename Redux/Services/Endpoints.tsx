@@ -1,0 +1,14 @@
+export const LOGIN = "/auth/login";
+export const GET_USERS = "/users";
+export const GET_STORES = "/store";
+export const CREATE_USER = "/users/create";
+export const UPDATE_USER = "/users/updateUser";
+export const GET_USER_BY_ID = "/users/getUserById";
+export const EDIT_PRODUCT = "/product/updateProduct";
+export const ADD_PRODUCT = "/product/createProduct";
+export const CATEGORY = "/category";
+export const BRAND = "/brand";
+export const GET_STORES_BY_ID = "/store/getStoreById";
+export const CREATE_STORE = "/store/createStore";
+export const GET_PRODUCT_BY_CODE = "/product/getProductByCode";
+export const DELETE_PRODUCT = "/product/deleteProduct"; 
