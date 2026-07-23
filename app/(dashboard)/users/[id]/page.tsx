@@ -171,7 +171,7 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
   //   return users.find((user) => user.id === id);
   // };
 
-  const user = userData?.response.body.content;
+  const user = userData?.response?.body?.content;
   const [showCurrentPassword, setShowCurrentPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -221,7 +221,7 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
     page: storePage,
   });
 
-  const totalStorePage = storesData?.response?.body?.pagination.totalPages;
+  const totalStorePage = storesData?.response?.body?.pagination?.totalPages;
   const storesContent = storesData?.response?.body?.content || [];
   const storesDictionary = useMemo(
     () =>
@@ -445,36 +445,67 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
 
   const validateForm = (): boolean => {
     const newErrors: Partial<UserFormData> = {};
+    const nameRegex = /^[a-zA-Z\s\.\-\ñ\Ñ]+$/;
+    const usernameRegex = /^[a-zA-Z0-9_\.\-]+$/;
 
     // Personal Information validation
     if (!formData.firstName.trim()) {
       newErrors.firstName = "First name is required";
+    } else if (!nameRegex.test(formData.firstName.trim())) {
+      newErrors.firstName = "First name cannot contain numbers or special characters";
     }
+
     if (!formData.lastName.trim()) {
       newErrors.lastName = "Last name is required";
+    } else if (!nameRegex.test(formData.lastName.trim())) {
+      newErrors.lastName = "Last name cannot contain numbers or special characters";
     }
-    // if (!formData.email.trim()) {
-    //   newErrors.email = "Email is required";
-    // } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-    //   newErrors.email = "Invalid email format";
-    // }
-    // if (!formData.contactNumber.trim()) {
-    //   newErrors.contactNumber = "Contact number is required";
-    // } else if (!/^\d{3}-\d{3}-\d{4}$/.test(formData.contactNumber)) {
-    //   newErrors.contactNumber = "Phone number must be in format XXX-XXX-XXXX";
-    // }
+
+    if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      newErrors.email = "Please enter a valid email address (e.g. name@example.com)";
+    }
+
+    if (formData.contactNumber.trim() && !/^\d{10}$/.test(formData.contactNumber.trim())) {
+      newErrors.contactNumber = "Contact number must be exactly 10 digits";
+    }
+
+    if (formData.birthDate) {
+      const birthDateObj = new Date(formData.birthDate);
+      const today = new Date();
+      if (birthDateObj > today) {
+        newErrors.birthDate = "Birth date cannot be in the future";
+      } else {
+        let age = today.getFullYear() - birthDateObj.getFullYear();
+        const m = today.getMonth() - birthDateObj.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDateObj.getDate())) {
+          age--;
+        }
+        if (age < 15) {
+          newErrors.birthDate = "User must be at least 15 years old";
+        }
+      }
+    }
 
     // Address Information validation
     if (!formData.Province.trim()) {
       newErrors.Province = "Province is required";
+    } else if (!nameRegex.test(formData.Province.trim())) {
+      newErrors.Province = "Province cannot contain numbers or special characters";
     }
+
     if (!formData.cityTown.trim()) {
       newErrors.cityTown = "City/Town is required";
+    } else if (!nameRegex.test(formData.cityTown.trim())) {
+      newErrors.cityTown = "City/Town cannot contain numbers or special characters";
     }
 
     // Account Details validation
     if (!formData.username.trim()) {
       newErrors.username = "Username is required";
+    } else if (formData.username.trim().length < 3) {
+      newErrors.username = "Username must be at least 3 characters";
+    } else if (!usernameRegex.test(formData.username.trim())) {
+      newErrors.username = "Username can only contain letters, numbers, underscores, dots, and hyphens";
     }
 
     // Password validation - only if any password field is filled
@@ -493,9 +524,8 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
           "New password is required when changing password";
       } else if (formData.newPassword.length < 6) {
         newErrors.newPassword = "New password must be at least 6 characters";
-      } else if (formData.newPassword.length > 8) {
-        newErrors.newPassword =
-          "New password must be not greater than 8 characters";
+      } else if (formData.newPassword.length > 20) {
+        newErrors.newPassword = "New password cannot exceed 20 characters";
       }
       if (!formData.confirmPassword.trim()) {
         newErrors.confirmPassword = "Please confirm your new password";
@@ -505,20 +535,21 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
     }
 
     if (!formData.userType) {
-      newErrors.userType = "user type is required";
+      newErrors.userType = "User type is required";
     }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (validateForm()) {
       setShowConfirm(true);
     }
-    setShowConfirm(true);
   };
+
 
   const handleConfirmSubmit = async () => {
     setShowConfirm(false);
@@ -679,14 +710,17 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                 <Input
                   id="firstName"
                   name="firstName"
-                  value={formData.firstName}
+                  value={formData.firstName || ""}
                   onChange={handleChange}
+                  maxLength={60}
+                  aria-describedby={errors?.firstName ? "err-regFirstName" : undefined}
+                  aria-invalid={!!errors?.firstName}
                   className={`py-2 px-3 h-10 bg-transparent ${
-                    errors.firstName ? "border-red-500" : ""
+                    errors?.firstName ? "border-red-500" : ""
                   }`}
                 />
                 {errors.firstName && (
-                  <p className="text-[#DF5C5D] text-sm">{errors.firstName}</p>
+                  <p id="err-regFirstName" role="alert" className="text-[#DF5C5D] text-sm">{errors.firstName}</p>
                 )}
               </div>
               <div className="flex flex-col gap-2">
@@ -696,14 +730,17 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                 <Input
                   id="lastName"
                   name="lastName"
-                  value={formData.lastName}
+                  value={formData.lastName || ""}
                   onChange={handleChange}
+                  maxLength={60}
+                  aria-describedby={errors?.lastName ? "err-regLastName" : undefined}
+                  aria-invalid={!!errors?.lastName}
                   className={`py-2 px-3 h-10 bg-transparent ${
-                    errors.lastName ? "border-red-500" : ""
+                    errors?.lastName ? "border-red-500" : ""
                   }`}
                 />
                 {errors.lastName && (
-                  <p className="text-[#DF5C5D] text-sm">{errors.lastName}</p>
+                  <p id="err-regLastName" role="alert" className="text-[#DF5C5D] text-sm">{errors.lastName}</p>
                 )}
               </div>
             </div>
@@ -782,6 +819,7 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                   <SelectContent>
                     <SelectItem value="Male">Male</SelectItem>
                     <SelectItem value="Female">Female</SelectItem>
+                    <SelectItem value="PreferNotToSay">Prefer not to say</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -802,12 +840,15 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                   type="email"
                   value={formData.email}
                   onChange={handleChange}
+                  maxLength={60}
+                  aria-describedby={errors?.email ? "err-reg-email" : undefined}
+                  aria-invalid={!!errors?.email}
                   className={`py-2 px-3 h-10 bg-transparent ${
                     errors.email ? "border-red-500" : ""
                   }`}
                 />
                 {errors.email && (
-                  <p className="text-[#DF5C5D] text-sm">{errors.email}</p>
+                  <p id="err-reg-email" role="alert" className="text-[#DF5C5D] text-sm">{errors.email}</p>
                 )}
               </div>
               <div className="flex flex-col gap-2">
@@ -832,14 +873,16 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                     type="tel"
                     value={formData.contactNumber}
                     onChange={handlePhoneChange}
+                    aria-describedby={errors?.contactNumber ? "err-reg-phone" : undefined}
+                    aria-invalid={!!errors?.contactNumber}
                     className={`h-11 flex-1 rounded-s-none border-l-0 focus-visible:border-[#DF5C5D] focus-visible:ring-[#DF5C5D]/50 focus-visible:ring-[3px] ${
                       errors.contactNumber ? "border-red-500" : ""
                     }`}
-                    maxLength={12}
+                    required maxLength={12}
                   />
                 </div>
                 {errors.contactNumber && (
-                  <p className="text-[#DF5C5D] text-sm">
+                  <p id="err-reg-phone" role="alert" className="text-[#DF5C5D] text-sm">
                     {errors.contactNumber}
                   </p>
                 )}
@@ -1168,12 +1211,15 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                 name="Province"
                 value={formData.Province}
                 onChange={handleChange}
+                maxLength={60}
+                aria-describedby={errors?.Province ? "err-reg-province" : undefined}
+                aria-invalid={!!errors?.Province}
                 className={`px-3 py-2 h-10 bg-transparent ${
                   errors.Province ? "border-red-500" : ""
                 }`}
               />
               {errors.Province && (
-                <p className="text-[#DF5C5D] text-sm">{errors.Province}</p>
+                <p id="err-reg-province" role="alert" className="text-[#DF5C5D] text-sm">{errors.Province}</p>
               )}
             </div>
 
@@ -1186,12 +1232,15 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                 name="cityTown"
                 value={formData.cityTown}
                 onChange={handleChange}
+                maxLength={60}
+                aria-describedby={errors?.cityTown ? "err-regCityTown" : undefined}
+                aria-invalid={!!errors?.cityTown}
                 className={`px-3 py-2 h-10 bg-transparent ${
                   errors.cityTown ? "border-red-500" : ""
                 }`}
               />
               {errors.cityTown && (
-                <p className="text-[#DF5C5D] text-sm">{errors.cityTown}</p>
+                <p id="err-regCityTown" role="alert" className="text-[#DF5C5D] text-sm">{errors.cityTown}</p>
               )}
             </div>
           </CardContent>
@@ -1241,6 +1290,10 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                     type={showCurrentPassword ? "text" : "password"}
                     value={formData.currentPassword}
                     onChange={handleChange}
+                    aria-describedby={
+                      errors?.currentPassword ? "err-currentPassword" : undefined
+                    }
+                    aria-invalid={!!errors?.currentPassword}
                     className={`px-3 py-2 h-10 bg-transparent pr-10 ${
                       errors.currentPassword ? "border-red-500" : ""
                     }`}
@@ -1248,17 +1301,22 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                   <button
                     type="button"
                     onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                    className="absolute right-8 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label={
+                      showCurrentPassword
+                        ? "Hide current password"
+                        : "Show current password"
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                   >
                     {showCurrentPassword ? (
-                      <EyeOff className="h-4 w-5" />
+                      <EyeOff className="h-4 w-5" aria-hidden="true" />
                     ) : (
-                      <Eye className="h-4 w-5" />
+                      <Eye className="h-4 w-5" aria-hidden="true" />
                     )}
                   </button>
                 </div>
                 {errors.currentPassword && (
-                  <p className="text-[#DF5C5D] text-sm">
+                  <p id="err-currentPassword" role="alert" className="text-[#DF5C5D] text-sm">
                     {errors.currentPassword}
                   </p>
                 )}
@@ -1276,6 +1334,10 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                     type={showNewPassword ? "text" : "password"}
                     value={formData.newPassword}
                     onChange={handleChange}
+                    aria-describedby={
+                      errors?.newPassword ? "err-newPassword" : undefined
+                    }
+                    aria-invalid={!!errors?.newPassword}
                     className={`px-3 py-2 h-10 bg-transparent pr-10 ${
                       errors.newPassword ? "border-red-500" : ""
                     }`}
@@ -1283,17 +1345,22 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                   <button
                     type="button"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    className="absolute right-8 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label={
+                      showNewPassword ? "Hide new password" : "Show new password"
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                   >
                     {showNewPassword ? (
-                      <EyeOff className="h-4 w-5" />
+                      <EyeOff className="h-4 w-5" aria-hidden="true" />
                     ) : (
-                      <Eye className="h-4 w-5" />
+                      <Eye className="h-4 w-5" aria-hidden="true" />
                     )}
                   </button>
                 </div>
                 {errors.newPassword && (
-                  <p className="text-[#DF5C5D] text-sm">{errors.newPassword}</p>
+                  <p id="err-newPassword" role="alert" className="text-[#DF5C5D] text-sm">
+                    {errors.newPassword}
+                  </p>
                 )}
               </div>
 
@@ -1309,6 +1376,10 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                     type={showConfirmPassword ? "text" : "password"}
                     value={formData.confirmPassword}
                     onChange={handleChange}
+                    aria-describedby={
+                      errors?.confirmPassword ? "err-confirmPassword" : undefined
+                    }
+                    aria-invalid={!!errors?.confirmPassword}
                     className={`px-3 py-2 h-10 bg-transparent pr-10 ${
                       errors.confirmPassword ? "border-red-500" : ""
                     }`}
@@ -1316,17 +1387,22 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
                   <button
                     type="button"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-8 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    aria-label={
+                      showConfirmPassword
+                        ? "Hide confirm password"
+                        : "Show confirm password"
+                    }
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                   >
                     {showConfirmPassword ? (
-                      <EyeOff className="h-4 w-5" />
+                      <EyeOff className="h-4 w-5" aria-hidden="true" />
                     ) : (
-                      <Eye className="h-4 w-5" />
+                      <Eye className="h-4 w-5" aria-hidden="true" />
                     )}
                   </button>
                 </div>
                 {errors.confirmPassword && (
-                  <p className="text-[#DF5C5D] text-sm">
+                  <p id="err-confirmPassword" role="alert" className="text-[#DF5C5D] text-sm">
                     {errors.confirmPassword}
                   </p>
                 )}
@@ -1334,6 +1410,7 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
             </div>
           </CardContent>
         </Card>
+
 
         <div className="flex justify-end">
           <Button type="submit" className="bg-[#DF5C5D] hover:bg-[#DF5C5D]/90">

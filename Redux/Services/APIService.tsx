@@ -5,7 +5,7 @@ import {
   fetchBaseQuery,
 } from "@reduxjs/toolkit/query/react";
 
-const baseUrl = "https://jwlcd79r-3004.asse.devtunnels.ms";
+const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3004";
 
 const fetchDynamicBaseQuery: BaseQueryFn = async (args, api, extraOptions) => {
   const dynamicBaseQueryWithHeaders = fetchBaseQuery({

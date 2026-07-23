@@ -1,4 +1,5 @@
 import { api } from "./APIService";
+import { UPDATE_DISCOUNT, UPDATE_VOUCHER } from "./Endpoints";
 
 const injectedRtkApi = api.injectEndpoints({
   endpoints: (build) => ({
@@ -32,6 +33,20 @@ const injectedRtkApi = api.injectEndpoints({
         body: query,
       }),
     }),
+    updateDiscountController: build.mutation<
+      CreateDiscountContollerResponse,
+      UpdateDiscountControllerRequest
+    >({
+      query: (query) => ({
+        url: UPDATE_DISCOUNT,
+        method: "PUT",
+        headers: {
+          discountid: query.discountID || query.id || "",
+          id: query.discountID || query.id || "",
+        },
+        body: query,
+      }),
+    }),
     createVoucherController: build.mutation<
       CreateVoucherContollerResponse,
       CreateVoucherControllerRequest
@@ -42,9 +57,24 @@ const injectedRtkApi = api.injectEndpoints({
         body: query,
       }),
     }),
+    updateVoucherController: build.mutation<
+      CreateVoucherContollerResponse,
+      UpdateVoucherControllerRequest
+    >({
+      query: (query) => ({
+        url: UPDATE_VOUCHER,
+        method: "PUT",
+        headers: {
+          voucherid: query.voucherID || query.id || "",
+          id: query.voucherID || query.id || "",
+        },
+        body: query,
+      }),
+    }),
   }),
   overrideExisting: false,
 });
+
 
 export type VoucherControllerFindAllRequest = {
   page: number;
@@ -158,10 +188,23 @@ export type Pagination = {
   totalPages: number;
 };
 
+export type UpdateDiscountControllerRequest = CreateDiscountControllerRequest & {
+  discountID?: string;
+  id?: string;
+};
+
+export type UpdateVoucherControllerRequest = Partial<CreateVoucherControllerRequest> & {
+  voucherID?: string;
+  id?: string;
+};
+
 export { injectedRtkApi as enhancedApi };
 export const {
   useVoucherControllerFindAllQuery,
   useDiscountControllerFindAllQuery,
   useCreateDiscountControllerMutation,
+  useUpdateDiscountControllerMutation,
   useCreateVoucherControllerMutation,
+  useUpdateVoucherControllerMutation,
 } = injectedRtkApi;
+

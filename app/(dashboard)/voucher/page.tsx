@@ -59,8 +59,11 @@ import {
   useCreateDiscountControllerMutation,
   useCreateVoucherControllerMutation,
   useDiscountControllerFindAllQuery,
+  useUpdateDiscountControllerMutation,
+  useUpdateVoucherControllerMutation,
   useVoucherControllerFindAllQuery,
 } from "@/Redux/Services/voucherApiService";
+
 
 export interface voucher {
   id: string;
@@ -159,6 +162,30 @@ const VoucherPage = () => {
 
   const [createDiscount] = useCreateDiscountControllerMutation();
   const [createVoucher] = useCreateVoucherControllerMutation();
+  const [updateDiscount] = useUpdateDiscountControllerMutation();
+  const [updateVoucher] = useUpdateVoucherControllerMutation();
+
+  const [showEditVoucherModal, setShowEditVoucherModal] = useState(false);
+  const [editVoucherData, setEditVoucherData] = useState<{
+    id: string;
+    voucherName: string;
+    voucherCode: string;
+    voucherType: number;
+    voucherValue: number;
+    voucherLimit: number;
+    voucherStatus: number;
+    voucherStartDate: string;
+    voucherEndDate: string;
+  } | null>(null);
+
+  const [showEditDiscountModal, setShowEditDiscountModal] = useState(false);
+  const [editDiscountData, setEditDiscountData] = useState<{
+    id: string;
+    discountName: string;
+    discountType: number;
+    discountValue: number;
+  } | null>(null);
+
 
   const categoriesContentApi = categoryData?.response?.body?.content || [];
   const brandContentApi = brandData?.response?.body?.content || [];
@@ -322,6 +349,78 @@ const VoucherPage = () => {
       }
     } catch {}
   };
+
+  const handleOpenEditVoucher = (voucherItem: any) => {
+    setEditVoucherData({
+      id: voucherItem.id,
+      voucherName: voucherItem.name || "",
+      voucherCode: voucherItem.promoCode || "",
+      voucherType: voucherItem.discountType === "percentage" ? 1 : 0,
+      voucherValue: voucherItem.value || 0,
+      voucherLimit: voucherItem.voucherLimit || 1000,
+      voucherStatus: voucherItem.voucherStatus ?? 1,
+      voucherStartDate: voucherItem.startDate ? voucherItem.startDate.split("T")[0] : "",
+      voucherEndDate: voucherItem.endDate ? voucherItem.endDate.split("T")[0] : "",
+    });
+    setShowEditVoucherModal(true);
+  };
+
+  const handleSaveEditVoucher = async () => {
+    if (!editVoucherData) return;
+    try {
+      await updateVoucher({
+        voucherID: editVoucherData.id,
+        id: editVoucherData.id,
+        voucherName: editVoucherData.voucherName,
+        voucherCode: editVoucherData.voucherCode,
+        voucherType: editVoucherData.voucherType,
+        voucherValue: Number(editVoucherData.voucherValue),
+        voucherLimit: Number(editVoucherData.voucherLimit),
+        voucherStatus: Number(editVoucherData.voucherStatus),
+        voucherStartDate: editVoucherData.voucherStartDate,
+        voucherEndDate: editVoucherData.voucherEndDate,
+      }).unwrap();
+      setSuccessMessage("Successfully Updated Voucher");
+      setShowEditVoucherModal(false);
+      voucherRefetch();
+    } catch (error) {
+      console.error("Error updating voucher:", error);
+    }
+  };
+
+  const handleOpenEditDiscount = (discountItem: any) => {
+    setEditDiscountData({
+      id: discountItem.id,
+      discountName: discountItem.discountName || "",
+      discountType:
+        discountItem.discountType === "senior"
+          ? 0
+          : discountItem.discountType === "pwd"
+          ? 1
+          : 2,
+      discountValue: discountItem.discountValue || 0,
+    });
+    setShowEditDiscountModal(true);
+  };
+
+  const handleSaveEditDiscount = async () => {
+    if (!editDiscountData) return;
+    try {
+      await updateDiscount({
+        discountID: editDiscountData.id,
+        id: editDiscountData.id,
+        discountName: editDiscountData.discountName,
+        discountType: Number(editDiscountData.discountType),
+        discountValue: Number(editDiscountData.discountValue),
+      }).unwrap();
+      setSuccessMessage("Successfully Updated Discount");
+      setShowEditDiscountModal(false);
+      discountRefetch();
+    } catch (error) {
+      console.error("Error updating discount:", error);
+    }
+  };
+
 
   const toggleBranch = (branch: { id: string; name: string }) => {
     setTempTags((prev) => {
@@ -545,15 +644,10 @@ const VoucherPage = () => {
                           variant="outline"
                           size="icon"
                           className="text-[#DF5C5D] border-[#DF5C5D] hover:bg-[#DF5C5D]/10"
-                          onClick={() => {
-                            // You can implement your edit logic here, e.g. open an edit modal
-                            // setEditVoucher(voucher);
-                            // setShowEditModal(true);
-                            alert(`Edit voucher: ${voucher.name}`);
-                          }}
+                          onClick={() => handleOpenEditVoucher(voucher)}
                         >
                           <svg
-                            className="h-6 w-6"
+                            className="h-5 w-5"
                             fill="none"
                             viewBox="0 0 24 24"
                             stroke="currentColor"
@@ -582,15 +676,16 @@ const VoucherPage = () => {
                 <TableRow className="hover:bg-transparent border-x-0">
                   <TableHead className="w-[30px] border-x-0">No.</TableHead>
                   <TableHead className="w-[200px] border-x-0">
-                    Name of Voucher
+                    Name of Discount
                   </TableHead>
                   <TableHead className="w-[100px] border-x-0">Value</TableHead>
+                  <TableHead className="w-[100px] border-x-0">Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isDiscountLoading ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="text-center">
+                    <TableCell colSpan={4} className="text-center">
                       <div className="flex justify-center items-center gap-2 py-2">
                         <svg
                           className="animate-spin h-5 w-5 text-[#DF5C5D]"
@@ -620,7 +715,7 @@ const VoucherPage = () => {
                   <>
                     {(discountsLists ?? []).length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={3} className="text-center">
+                        <TableCell colSpan={4} className="text-center">
                           <p className="mt-2 mb-2">No discounts available.</p>
                           <Button
                             variant="outline"
@@ -646,6 +741,28 @@ const VoucherPage = () => {
                           <TableCell className="border-x-0">
                             {discount.discountValue}%
                           </TableCell>
+                          <TableCell className="border-x-0">
+                            <Button
+                              variant="outline"
+                              size="icon"
+                              className="text-[#DF5C5D] border-[#DF5C5D] hover:bg-[#DF5C5D]/10"
+                              onClick={() => handleOpenEditDiscount(discount)}
+                            >
+                              <svg
+                                className="h-5 w-5"
+                                fill="none"
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-4.243 1.414 1.414-4.243a4 4 0 01.828-1.414z"
+                                />
+                              </svg>
+                            </Button>
+                          </TableCell>
                         </TableRow>
                       ))
                     )}
@@ -654,6 +771,7 @@ const VoucherPage = () => {
               </TableBody>
             </Table>
           </TabsContent>
+
         </Tabs>
       </div>
 
@@ -1349,8 +1467,223 @@ const VoucherPage = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Edit Voucher Modal */}
+
+      <Dialog open={showEditVoucherModal} onOpenChange={setShowEditVoucherModal}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Edit Voucher</DialogTitle>
+          </DialogHeader>
+          {editVoucherData && (
+            <div className="space-y-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="editVoucherName">Voucher Name</Label>
+                <Input
+                  id="editVoucherName"
+                  value={editVoucherData.voucherName}
+                  onChange={(e) =>
+                    setEditVoucherData((prev) =>
+                      prev ? { ...prev, voucherName: e.target.value } : null
+                    )
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="editVoucherCode">Promo Code</Label>
+                  <Input
+                    id="editVoucherCode"
+                    value={editVoucherData.voucherCode}
+                    onChange={(e) =>
+                      setEditVoucherData((prev) =>
+                        prev ? { ...prev, voucherCode: e.target.value } : null
+                      )
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="editVoucherType">Value Type</Label>
+                  <Select
+                    value={editVoucherData.voucherType === 1 ? "percentage" : "fixed"}
+                    onValueChange={(val) =>
+                      setEditVoucherData((prev) =>
+                        prev ? { ...prev, voucherType: val === "percentage" ? 1 : 0 } : null
+                      )
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="percentage">Percentage (%)</SelectItem>
+                      <SelectItem value="fixed">Fixed Amount (₱)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="editVoucherValue">Value</Label>
+                  <Input
+                    id="editVoucherValue"
+                    type="number"
+                    value={editVoucherData.voucherValue}
+                    onChange={(e) =>
+                      setEditVoucherData((prev) =>
+                        prev ? { ...prev, voucherValue: parseFloat(e.target.value) || 0 } : null
+                      )
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="editVoucherLimit">Limit / Quantity</Label>
+                  <Input
+                    id="editVoucherLimit"
+                    type="number"
+                    value={editVoucherData.voucherLimit}
+                    onChange={(e) =>
+                      setEditVoucherData((prev) =>
+                        prev ? { ...prev, voucherLimit: parseInt(e.target.value, 10) || 0 } : null
+                      )
+                    }
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="editVoucherStartDate">Start Date</Label>
+                  <Input
+                    id="editVoucherStartDate"
+                    type="date"
+                    value={editVoucherData.voucherStartDate}
+                    onChange={(e) =>
+                      setEditVoucherData((prev) =>
+                        prev ? { ...prev, voucherStartDate: e.target.value } : null
+                      )
+                    }
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="editVoucherEndDate">End Date</Label>
+                  <Input
+                    id="editVoucherEndDate"
+                    type="date"
+                    value={editVoucherData.voucherEndDate}
+                    onChange={(e) =>
+                      setEditVoucherData((prev) =>
+                        prev ? { ...prev, voucherEndDate: e.target.value } : null
+                      )
+                    }
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="editVoucherStatus">Status</Label>
+                <Select
+                  value={editVoucherData.voucherStatus === 1 ? "1" : "0"}
+                  onValueChange={(val) =>
+                    setEditVoucherData((prev) =>
+                      prev ? { ...prev, voucherStatus: parseInt(val, 10) } : null
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">Active</SelectItem>
+                    <SelectItem value="0">Expired / Inactive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditVoucherModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#DF5C5D] hover:bg-[#DF5C5D]/90"
+              onClick={handleSaveEditVoucher}
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Discount Modal */}
+      <Dialog open={showEditDiscountModal} onOpenChange={setShowEditDiscountModal}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Discount</DialogTitle>
+          </DialogHeader>
+          {editDiscountData && (
+            <div className="space-y-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="editDiscountName">Discount Name</Label>
+                <Input
+                  id="editDiscountName"
+                  value={editDiscountData.discountName}
+                  onChange={(e) =>
+                    setEditDiscountData((prev) =>
+                      prev ? { ...prev, discountName: e.target.value } : null
+                    )
+                  }
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="editDiscountType">Discount Type</Label>
+                <Select
+                  value={editDiscountData.discountType.toString()}
+                  onValueChange={(val) =>
+                    setEditDiscountData((prev) =>
+                      prev ? { ...prev, discountType: parseInt(val, 10) } : null
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">SENIOR CITIZEN</SelectItem>
+                    <SelectItem value="1">PWD</SelectItem>
+                    <SelectItem value="2">STUDENT</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="editDiscountValue">Discount Value (%)</Label>
+                <Input
+                  id="editDiscountValue"
+                  type="number"
+                  value={editDiscountData.discountValue}
+                  onChange={(e) =>
+                    setEditDiscountData((prev) =>
+                      prev ? { ...prev, discountValue: parseFloat(e.target.value) || 0 } : null
+                    )
+                  }
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDiscountModal(false)}>
+              Cancel
+            </Button>
+            <Button
+              className="bg-[#DF5C5D] hover:bg-[#DF5C5D]/90"
+              onClick={handleSaveEditDiscount}
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
+
 
 export default VoucherPage;

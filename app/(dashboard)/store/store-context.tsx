@@ -54,18 +54,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const [stores, setStores] = useState<Store[]>([]);
 
-  const storeTimings = storesData?.response.body?.content
+  const storeTimings = storesData?.response?.body?.content
     ? storesData.response.body.content.map((store: any) => {
         const [openingTime, closingTime] = store.storeOpenClosing.split(" - ");
         return { openingTime, closingTime };
       })
     : [];
 
-  // console.log(storesData?.response.body.pagination);
-  const totalPages = storesData?.response.body?.pagination?.totalPages || 0;
+  const totalPages = storesData?.response?.body?.pagination?.totalPages || 0;
 
   useEffect(() => {
-    if (storesData?.response.body?.content) {
+    if (storesData?.response?.body?.content) {
       const soresDataFromApi = storesData.response.body.content.map(
         (store: any, index: number) => ({
           id: store._id,

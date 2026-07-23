@@ -11,4 +11,6 @@ export const BRAND = "/brand";
 export const GET_STORES_BY_ID = "/store/getStoreById";
 export const CREATE_STORE = "/store/createStore";
 export const GET_PRODUCT_BY_CODE = "/product/getProductByCode";
-export const DELETE_PRODUCT = "/product/deleteProduct"; 
+export const DELETE_PRODUCT = "/product/deleteProduct";
+export const UPDATE_VOUCHER = "/voucher/updateVoucher";
+export const UPDATE_DISCOUNT = "/discount/updateDiscount";

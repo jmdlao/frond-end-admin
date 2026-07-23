@@ -166,12 +166,102 @@ const AddUserPage = () => {
     return value;
   };
 
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const validateForm = () => {
+    const newErrors: Record<string, string> = {};
+    const nameRegex = /^[a-zA-Z\s\.\-\ñ\Ñ]+$/;
+    const usernameRegex = /^[a-zA-Z0-9_\.\-]+$/;
+
+    if (!formData.firstName.trim()) {
+      newErrors.firstName = "First name is required";
+    } else if (!nameRegex.test(formData.firstName.trim())) {
+      newErrors.firstName = "First name cannot contain numbers or special characters";
+    }
+
+    if (!formData.lastName.trim()) {
+      newErrors.lastName = "Last name is required";
+    } else if (!nameRegex.test(formData.lastName.trim())) {
+      newErrors.lastName = "Last name cannot contain numbers or special characters";
+    }
+
+    if (formData.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) {
+      newErrors.email = "Please enter a valid email address (e.g. name@example.com)";
+    }
+
+    if (formData.contactNumber.trim() && !/^\d{10}$/.test(formData.contactNumber.trim())) {
+      newErrors.contactNumber = "Contact number must be exactly 10 digits";
+    }
+
+    if (formData.birthDate) {
+      const birthDateObj = new Date(formData.birthDate);
+      const today = new Date();
+      if (birthDateObj > today) {
+        newErrors.birthDate = "Birth date cannot be in the future";
+      } else {
+        let age = today.getFullYear() - birthDateObj.getFullYear();
+        const m = today.getMonth() - birthDateObj.getMonth();
+        if (m < 0 || (m === 0 && today.getDate() < birthDateObj.getDate())) {
+          age--;
+        }
+        if (age < 15) {
+          newErrors.birthDate = "User must be at least 15 years old";
+        }
+      }
+    }
+
+    if (!formData.Province.trim()) {
+      newErrors.Province = "Province is required";
+    } else if (!nameRegex.test(formData.Province.trim())) {
+      newErrors.Province = "Province cannot contain numbers or special characters";
+    }
+
+    if (!formData.cityTown.trim()) {
+      newErrors.cityTown = "City/Town is required";
+    } else if (!nameRegex.test(formData.cityTown.trim())) {
+      newErrors.cityTown = "City/Town cannot contain numbers or special characters";
+    }
+
+    if (!formData.username.trim()) {
+      newErrors.username = "Username is required";
+    } else if (formData.username.trim().length < 3) {
+      newErrors.username = "Username must be at least 3 characters";
+    } else if (!usernameRegex.test(formData.username.trim())) {
+      newErrors.username = "Username can only contain letters, numbers, underscores, dots, and hyphens";
+    }
+
+    if (!formData.password.trim()) {
+      newErrors.password = "Password is required";
+    } else if (formData.password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+    } else if (formData.password.length > 20) {
+      newErrors.password = "Password cannot exceed 20 characters";
+    }
+
+    if (!formData.confirmPassword.trim()) {
+      newErrors.confirmPassword = "Please confirm your password";
+    } else if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match";
+    }
+
+    if (!formData.role) {
+      newErrors.role = "Role is required";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+
   const [addUserHere] = useAddUserControllerMutation();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setShowConfirm(true);
+    if (validateForm()) {
+      setShowConfirm(true);
+    }
   };
+
 
   const handleConfirmSubmit = async () => {
     setShowConfirm(false);
@@ -214,9 +304,14 @@ const AddUserPage = () => {
         })
         .catch((error) => {
           console.error("Error creating User:", error);
-          setErrorMessage(
-            error?.data?.errors || "An error occurred while creating the user."
-          );
+          const msg =
+            (typeof error?.data?.errors === "string" ? error.data.errors : null) ||
+            error?.data?.response?.message ||
+            error?.data?.response?.error ||
+            error?.data?.message ||
+            error?.message ||
+            "An error occurred while creating the user.";
+          setErrorMessage(msg);
           setIsAddUser(false);
         });
       // .catch((error) => {
@@ -254,8 +349,9 @@ const AddUserPage = () => {
   const maxFiles = 1; // Only allow one file for resume
 
   const [
-    { files, isDragging, errors },
+    { files, isDragging, errors: fileUploadErrors },
     {
+
       handleDragEnter,
       handleDragLeave,
       handleDragOver,
@@ -362,7 +458,9 @@ const AddUserPage = () => {
                   id="firstName"
                   placeholder="Enter first name"
                   required
-                  className="py-2 px-3 h-10"
+                  aria-describedby={errors?.firstName ? "err-add-firstName" : undefined}
+                  aria-invalid={!!errors?.firstName}
+                  className={`py-2 px-3 h-10 ${errors.firstName ? "border-red-500" : ""}`}
                   value={formData.firstName}
                   onChange={(e) =>
                     setFormData((prev) => ({
@@ -371,6 +469,11 @@ const AddUserPage = () => {
                     }))
                   }
                 />
+                {errors.firstName && (
+                  <p id="err-add-firstName" role="alert" className="text-[#DF5C5D] text-sm">
+                    {errors.firstName}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="lastName" className="mb-0.5 font-medium">
@@ -380,7 +483,9 @@ const AddUserPage = () => {
                   id="lastName"
                   placeholder="Enter last name"
                   required
-                  className="py-2 px-3 h-10"
+                  aria-describedby={errors?.lastName ? "err-add-lastName" : undefined}
+                  aria-invalid={!!errors?.lastName}
+                  className={`py-2 px-3 h-10 ${errors.lastName ? "border-red-500" : ""}`}
                   value={formData.lastName}
                   onChange={(e) =>
                     setFormData((prev) => ({
@@ -389,8 +494,14 @@ const AddUserPage = () => {
                     }))
                   }
                 />
+                {errors.lastName && (
+                  <p id="err-add-lastName" role="alert" className="text-[#DF5C5D] text-sm">
+                    {errors.lastName}
+                  </p>
+                )}
               </div>
             </div>
+
 
             {/* Birth Date, Gender, Role Row */}
             <div className="grid grid-cols-2 gap-6">
@@ -403,7 +514,9 @@ const AddUserPage = () => {
                     id="birthDate"
                     type="date"
                     required
-                    className="w-full px-3 py-2 h-10 bg-transparent pr-10 appearance-none 
+                    aria-describedby={errors?.birthDate ? "err-add-birthDate" : undefined}
+                    aria-invalid={!!errors?.birthDate}
+                    className={`w-full px-3 py-2 h-10 bg-transparent pr-10 appearance-none 
                       [&::-webkit-calendar-picker-indicator]:opacity-0 
                       [&::-webkit-datetime-edit]:text-gray-500 
                       [&::-webkit-datetime-edit-fields-wrapper]:p-0 
@@ -414,7 +527,7 @@ const AddUserPage = () => {
                       [&::-moz-datetime-edit-text]:text-gray-500
                       [&::-moz-datetime-edit]:empty:before:content-['Select_date']
                       [&::-ms-clear]:hidden
-                      [&::-ms-expand]:hidden"
+                      [&::-ms-expand]:hidden ${errors.birthDate ? "border-red-500" : ""}`}
                     value={formData.birthDate}
                     onChange={(e) =>
                       setFormData((prev) => ({
@@ -441,6 +554,11 @@ const AddUserPage = () => {
                     <CalendarIcon className="h-4 w-4" />
                   </button>
                 </div>
+                {errors.birthDate && (
+                  <p id="err-add-birthDate" role="alert" className="text-[#DF5C5D] text-sm">
+                    {errors.birthDate}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-2">
@@ -453,7 +571,7 @@ const AddUserPage = () => {
                     setFormData((prev) => ({ ...prev, gender: value }))
                   }
                 >
-                  <SelectTrigger className="px-3 py-2 h-10">
+                  <SelectTrigger className={`px-3 py-2 h-10 ${errors.gender ? "border-red-500" : ""}`}>
                     <SelectValue placeholder="Select gender" />
                   </SelectTrigger>
                   <SelectContent>
@@ -461,6 +579,11 @@ const AddUserPage = () => {
                     <SelectItem value="Female">Female</SelectItem>
                   </SelectContent>
                 </Select>
+                {errors.gender && (
+                  <p role="alert" className="text-[#DF5C5D] text-sm">
+                    {errors.gender}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -475,7 +598,7 @@ const AddUserPage = () => {
                     setFormData((prev) => ({ ...prev, role: value }))
                   }
                 >
-                  <SelectTrigger className="px-3 py-2 h-10">
+                  <SelectTrigger className={`px-3 py-2 h-10 ${errors.role ? "border-red-500" : ""}`}>
                     <SelectValue placeholder="Select role" />
                   </SelectTrigger>
                   <SelectContent>
@@ -485,7 +608,13 @@ const AddUserPage = () => {
                     <SelectItem value="cashier">Cashier</SelectItem>
                   </SelectContent>
                 </Select>
+                {errors.role && (
+                  <p role="alert" className="text-[#DF5C5D] text-sm">
+                    {errors.role}
+                  </p>
+                )}
               </div>
+
 
               {formData.role.toLowerCase() !== "cashier" ? (
                 <div className="flex flex-col gap-2">
@@ -636,12 +765,19 @@ const AddUserPage = () => {
                   id="email"
                   type="email"
                   placeholder="Enter email address"
-                  className="py-2 px-3 h-10 bg-transparent"
+                  aria-describedby={errors?.email ? "err-add-email" : undefined}
+                  aria-invalid={!!errors?.email}
+                  className={`py-2 px-3 h-10 bg-transparent ${errors.email ? "border-red-500" : ""}`}
                   value={formData.email}
                   onChange={(e) =>
                     setFormData((prev) => ({ ...prev, email: e.target.value }))
                   }
                 />
+                {errors.email && (
+                  <p id="err-add-email" role="alert" className="text-[#DF5C5D] text-sm">
+                    {errors.email}
+                  </p>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <Label htmlFor="contactNumber" className="mb-0.5 font-medium">
@@ -664,14 +800,22 @@ const AddUserPage = () => {
                     type="tel"
                     placeholder="Enter phone number"
                     required
-                    className="h-11 flex-1 rounded-s-none border-l-0 focus-visible:border-[#DF5C5D] focus-visible:ring-[#DF5C5D]/50 focus-visible:ring-[3px]"
+                    aria-describedby={errors?.contactNumber ? "err-add-contactNumber" : undefined}
+                    aria-invalid={!!errors?.contactNumber}
+                    className={`h-11 flex-1 rounded-s-none border-l-0 focus-visible:border-[#DF5C5D] focus-visible:ring-[#DF5C5D]/50 focus-visible:ring-[3px] ${errors.contactNumber ? "border-red-500" : ""}`}
                     value={formatPhoneNumber(formData.contactNumber)}
                     onChange={handlePhoneChange}
                     maxLength={12}
                   />
                 </div>
+                {errors.contactNumber && (
+                  <p id="err-add-contactNumber" role="alert" className="text-[#DF5C5D] text-sm">
+                    {errors.contactNumber}
+                  </p>
+                )}
               </div>
             </div>
+
 
             {/* Resume Upload */}
             <div className="flex flex-col gap-2">
@@ -717,15 +861,16 @@ const AddUserPage = () => {
                   </div>
                 </div>
 
-                {errors.length > 0 && (
+                {fileUploadErrors.length > 0 && (
                   <div
                     className="text-destructive flex items-center gap-1 text-xs"
                     role="alert"
                   >
                     <AlertCircleIcon className="size-3 shrink-0" />
-                    <span>{errors[0]}</span>
+                    <span>{fileUploadErrors[0]}</span>
                   </div>
                 )}
+
 
                 {/* File list */}
                 {files.length > 0 && (
@@ -783,12 +928,19 @@ const AddUserPage = () => {
                 id="Province"
                 placeholder="Enter Province"
                 required
-                className="px-3 py-2 h-10 bg-transparent"
+                aria-describedby={errors?.Province ? "err-add-Province" : undefined}
+                aria-invalid={!!errors?.Province}
+                className={`px-3 py-2 h-10 bg-transparent ${errors.Province ? "border-red-500" : ""}`}
                 value={formData.Province}
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, Province: e.target.value }))
                 }
               />
+              {errors.Province && (
+                <p id="err-add-Province" role="alert" className="text-[#DF5C5D] text-sm">
+                  {errors.Province}
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -799,12 +951,19 @@ const AddUserPage = () => {
                 id="cityTown"
                 placeholder="Enter city/town"
                 required
-                className="px-3 py-2 h-10 bg-transparent"
+                aria-describedby={errors?.cityTown ? "err-add-cityTown" : undefined}
+                aria-invalid={!!errors?.cityTown}
+                className={`px-3 py-2 h-10 bg-transparent ${errors.cityTown ? "border-red-500" : ""}`}
                 value={formData.cityTown}
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, cityTown: e.target.value }))
                 }
               />
+              {errors.cityTown && (
+                <p id="err-add-cityTown" role="alert" className="text-[#DF5C5D] text-sm">
+                  {errors.cityTown}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -823,12 +982,19 @@ const AddUserPage = () => {
                 id="username"
                 placeholder="Enter username"
                 required
-                className="px-3 py-2 h-10"
+                aria-describedby={errors?.username ? "err-add-username" : undefined}
+                aria-invalid={!!errors?.username}
+                className={`px-3 py-2 h-10 ${errors.username ? "border-red-500" : ""}`}
                 value={formData.username}
                 onChange={(e) =>
                   setFormData((prev) => ({ ...prev, username: e.target.value }))
                 }
               />
+              {errors.username && (
+                <p id="err-add-username" role="alert" className="text-[#DF5C5D] text-sm">
+                  {errors.username}
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -841,7 +1007,9 @@ const AddUserPage = () => {
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter password"
                   required
-                  className="px-3 py-2 h-10 pr-10"
+                  aria-describedby={errors?.password ? "err-add-password" : undefined}
+                  aria-invalid={!!errors?.password}
+                  className={`px-3 py-2 h-10 pr-10 ${errors.password ? "border-red-500" : ""}`}
                   value={formData.password}
                   onChange={(e) =>
                     setFormData((prev) => ({
@@ -854,6 +1022,7 @@ const AddUserPage = () => {
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -862,6 +1031,11 @@ const AddUserPage = () => {
                   )}
                 </button>
               </div>
+              {errors.password && (
+                <p id="err-add-password" role="alert" className="text-[#DF5C5D] text-sm">
+                  {errors.password}
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -874,7 +1048,9 @@ const AddUserPage = () => {
                   type={showConfirmPassword ? "text" : "password"}
                   placeholder="Confirm password"
                   required
-                  className="px-3 py-2 h-10 pr-10"
+                  aria-describedby={errors?.confirmPassword ? "err-add-confirmPassword" : undefined}
+                  aria-invalid={!!errors?.confirmPassword}
+                  className={`px-3 py-2 h-10 pr-10 ${errors.confirmPassword ? "border-red-500" : ""}`}
                   value={formData.confirmPassword}
                   onChange={(e) =>
                     setFormData((prev) => ({
@@ -887,6 +1063,7 @@ const AddUserPage = () => {
                   type="button"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                 >
                   {showConfirmPassword ? (
                     <EyeOff className="h-4 w-4" />
@@ -895,7 +1072,13 @@ const AddUserPage = () => {
                   )}
                 </button>
               </div>
+              {errors.confirmPassword && (
+                <p id="err-add-confirmPassword" role="alert" className="text-[#DF5C5D] text-sm">
+                  {errors.confirmPassword}
+                </p>
+              )}
             </div>
+
           </CardContent>
           {errorMessage && (
             <div className="mb-4 p-3 text-sm text-red-700 bg-red-100 border border-red-400 rounded">

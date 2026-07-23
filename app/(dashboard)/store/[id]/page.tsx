@@ -552,7 +552,7 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
 
   const [editStore] = useEditStoreMutation();
 
-  const navStore = storeData?.response.body.content;
+  const navStore = storeData?.response?.body?.content;
 
   // const transactions: Transaction[] = [
   //   {

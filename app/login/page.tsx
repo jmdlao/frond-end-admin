@@ -59,8 +59,16 @@ export default function LoginPage() {
       );
       router.push("/dashboard");
     } catch (error: any) {
-      setErrorMessage(error.message || "An unexpected error occurred.");
+
+      console.error("Login Error:", error);
+      const apiMessage =
+        error?.data?.response?.message ||
+        error?.data?.message ||
+        error?.message ||
+        "An unexpected error occurred.";
+      setErrorMessage(apiMessage);
     } finally {
+
       setIsLoading(false);
     }
   };

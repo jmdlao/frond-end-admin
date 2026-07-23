@@ -78,7 +78,7 @@ const UsersPage = () => {
   });
 
   const usersData: User[] =
-    users?.response?.body.content.map((user) => ({
+    users?.response?.body?.content?.map((user) => ({
       id: user._id,
       firstName: user.firstName,
       lastName: user.lastName,
@@ -98,7 +98,7 @@ const UsersPage = () => {
     })) || [];
 
   const usersDataLength = usersData.length ? usersData.length : 0;
-  const totalPages = users?.response?.body.pagination.totalPages || 1;
+  const totalPages = users?.response?.body?.pagination?.totalPages || 1;
 
   useEffect(() => {
     usersRefetch();
