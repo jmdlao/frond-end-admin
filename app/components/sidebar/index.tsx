@@ -66,7 +66,7 @@ const Sidebar = () => {
       <div className="flex flex-col h-full">
         <div className="space-y-5 w-full">
           <img
-            className="h-15 w-fit mx-auto"
+            className="h-11 w-fit mx-auto"
             src="/logo-black.png"
             alt="logo"
           />

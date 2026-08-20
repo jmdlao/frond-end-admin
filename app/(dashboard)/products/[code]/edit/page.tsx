@@ -237,7 +237,7 @@ export default function EditProductPage() {
                     </Label>
                     <Input
                       value={product.code}
-                      maxLength={10}
+                      maxLength={13}
                       className="bg-white shadow-sm"
                       placeholder="Enter product code"
                       disabled
@@ -327,15 +327,16 @@ export default function EditProductPage() {
                     </Label>
                     <Input
                       type="number"
-                      value={product.sellingPrice}
+                      value={product.sellingPrice === 0 ? "" : product.sellingPrice}
                       onChange={e => {
-                        let value = e.target.value.replace(/[^0-9.]/g, "");
+                        let value = e.target.value.replace(/[^0-9.]/g, "").replace(/^0+(?=\d)/, "");
                         if (value.length > 8) value = value.slice(0, 8);
                         setProduct(prev => prev && ({
                           ...prev,
                           sellingPrice: value === "" ? 0 : parseFloat(value),
                         }));
                       }}
+                      placeholder="0.00"
                       min="0"
                       step="0.01"
                       className="bg-white shadow-sm"
@@ -348,15 +349,16 @@ export default function EditProductPage() {
                     </Label>
                     <Input
                       type="number"
-                      value={product.price}
+                      value={product.price === 0 ? "" : product.price}
                       onChange={e => {
-                        let value = e.target.value.replace(/[^0-9.]/g, "");
+                        let value = e.target.value.replace(/[^0-9.]/g, "").replace(/^0+(?=\d)/, "");
                         if (value.length > 8) value = value.slice(0, 8);
                         setProduct(prev => prev && ({
                           ...prev,
                           price: value === "" ? 0 : parseFloat(value),
                         }));
                       }}
+                      placeholder="0.00"
                       min="0"
                       step="0.01"
                       className="bg-white shadow-sm"
@@ -394,15 +396,16 @@ export default function EditProductPage() {
                   </Label>
                   <Input
                     type="number"
-                    value={product.stocks}
+                    value={product.stocks === 0 ? "" : product.stocks}
                     onChange={e => {
-                      let value = e.target.value.replace(/[^0-9]/g, "");
+                      let value = e.target.value.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
                       if (value.length > 8) value = value.slice(0, 8);
                       setProduct(prev => prev && ({
                         ...prev,
-                        stocks: value === "" ? 0 : parseInt(value),
+                        stocks: value === "" ? 0 : parseInt(value, 10),
                       }));
                     }}
+                    placeholder="0"
                     min="0"
                     className="bg-white shadow-sm"
                     required

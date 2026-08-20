@@ -53,6 +53,40 @@ import {
 import { useStoreControllerFindAllQuery } from "@/Redux/Services/storeApiService";
 import { useAddUserControllerMutation } from "@/Redux/Services/userApiService";
 
+const getPasswordRequirements = (password: string) => {
+  return {
+    hasMinLength: password.length >= 8,
+    hasUpper: /[A-Z]/.test(password),
+    hasLower: /[a-z]/.test(password),
+    hasNumber: /[0-9]/.test(password),
+    hasSpecial: /[!@#$%^&*(),.?":{}|<>\-_~`+=/]/.test(password),
+  };
+};
+
+const getPasswordStrength = (password: string) => {
+  if (!password) return { score: 0, label: "", color: "bg-gray-200", percent: "0%" };
+
+  const reqs = getPasswordRequirements(password);
+  const score = Object.values(reqs).filter(Boolean).length;
+
+  if (score <= 2) return { score, label: "Weak", color: "bg-red-500", percent: "33%" };
+  if (score <= 4) return { score, label: "Medium", color: "bg-yellow-500", percent: "66%" };
+  return { score, label: "Strong", color: "bg-green-500", percent: "100%" };
+};
+
+const generateUsername = (firstName: string, lastName: string) => {
+  const cleanFirst = firstName.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const cleanLast = lastName.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (cleanFirst && cleanLast) {
+    return `${cleanFirst}.${cleanLast}`;
+  } else if (cleanFirst) {
+    return cleanFirst;
+  } else if (cleanLast) {
+    return cleanLast;
+  }
+  return "";
+};
+
 const AddUserPage = () => {
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
@@ -230,15 +264,23 @@ const AddUserPage = () => {
       newErrors.username = "Username can only contain letters, numbers, underscores, dots, and hyphens";
     }
 
-    if (!formData.password.trim()) {
+    const reqs = getPasswordRequirements(formData.password);
+
+    if (!formData.password) {
       newErrors.password = "Password is required";
-    } else if (formData.password.length < 6) {
-      newErrors.password = "Password must be at least 6 characters";
-    } else if (formData.password.length > 20) {
-      newErrors.password = "Password cannot exceed 20 characters";
+    } else if (!reqs.hasMinLength) {
+      newErrors.password = "Password must be at least 8 characters long";
+    } else if (!reqs.hasUpper) {
+      newErrors.password = "Password must contain at least one uppercase letter (A-Z)";
+    } else if (!reqs.hasLower) {
+      newErrors.password = "Password must contain at least one lowercase letter (a-z)";
+    } else if (!reqs.hasNumber) {
+      newErrors.password = "Password must contain at least one number (0-9)";
+    } else if (!reqs.hasSpecial) {
+      newErrors.password = "Password must contain at least one special character (!@#$...)";
     }
 
-    if (!formData.confirmPassword.trim()) {
+    if (!formData.confirmPassword) {
       newErrors.confirmPassword = "Please confirm your password";
     } else if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = "Passwords do not match";
@@ -462,12 +504,14 @@ const AddUserPage = () => {
                   aria-invalid={!!errors?.firstName}
                   className={`py-2 px-3 h-10 ${errors.firstName ? "border-red-500" : ""}`}
                   value={formData.firstName}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const newFirst = e.target.value;
                     setFormData((prev) => ({
                       ...prev,
-                      firstName: e.target.value,
-                    }))
-                  }
+                      firstName: newFirst,
+                      username: generateUsername(newFirst, prev.lastName),
+                    }));
+                  }}
                 />
                 {errors.firstName && (
                   <p id="err-add-firstName" role="alert" className="text-[#DF5C5D] text-sm">
@@ -487,12 +531,14 @@ const AddUserPage = () => {
                   aria-invalid={!!errors?.lastName}
                   className={`py-2 px-3 h-10 ${errors.lastName ? "border-red-500" : ""}`}
                   value={formData.lastName}
-                  onChange={(e) =>
+                  onChange={(e) => {
+                    const newLast = e.target.value;
                     setFormData((prev) => ({
                       ...prev,
-                      lastName: e.target.value,
-                    }))
-                  }
+                      lastName: newLast,
+                      username: generateUsername(prev.firstName, newLast),
+                    }));
+                  }}
                 />
                 {errors.lastName && (
                   <p id="err-add-lastName" role="alert" className="text-[#DF5C5D] text-sm">
@@ -1031,6 +1077,49 @@ const AddUserPage = () => {
                   )}
                 </button>
               </div>
+              {/* Password Strength Meter */}
+              {formData.password && (
+                <div className="space-y-2 mt-1">
+                  <div className="flex items-center justify-between text-xs font-medium">
+                    <span>Password Strength:</span>
+                    <span className={
+                      getPasswordStrength(formData.password).label === "Weak"
+                        ? "text-red-500 font-bold"
+                        : getPasswordStrength(formData.password).label === "Medium"
+                        ? "text-yellow-600 font-bold"
+                        : "text-green-600 font-bold"
+                    }>
+                      {getPasswordStrength(formData.password).label}
+                    </span>
+                  </div>
+
+                  <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${getPasswordStrength(formData.password).color}`}
+                      style={{ width: getPasswordStrength(formData.password).percent }}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1 text-[11px] text-gray-500 pt-1">
+                    <div className={getPasswordRequirements(formData.password).hasMinLength ? "text-green-600 font-medium" : ""}>
+                      {getPasswordRequirements(formData.password).hasMinLength ? "✓" : "•"} At least 8 characters
+                    </div>
+                    <div className={getPasswordRequirements(formData.password).hasUpper ? "text-green-600 font-medium" : ""}>
+                      {getPasswordRequirements(formData.password).hasUpper ? "✓" : "•"} 1 Uppercase (A-Z)
+                    </div>
+                    <div className={getPasswordRequirements(formData.password).hasLower ? "text-green-600 font-medium" : ""}>
+                      {getPasswordRequirements(formData.password).hasLower ? "✓" : "•"} 1 Lowercase (a-z)
+                    </div>
+                    <div className={getPasswordRequirements(formData.password).hasNumber ? "text-green-600 font-medium" : ""}>
+                      {getPasswordRequirements(formData.password).hasNumber ? "✓" : "•"} 1 Number (0-9)
+                    </div>
+                    <div className={getPasswordRequirements(formData.password).hasSpecial ? "text-green-600 font-medium" : ""}>
+                      {getPasswordRequirements(formData.password).hasSpecial ? "✓" : "•"} 1 Special char (!@#$)
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {errors.password && (
                 <p id="err-add-password" role="alert" className="text-[#DF5C5D] text-sm">
                   {errors.password}
@@ -1072,6 +1161,18 @@ const AddUserPage = () => {
                   )}
                 </button>
               </div>
+
+              {/* Confirm Password Match Indicator */}
+              {formData.confirmPassword && (
+                <p className={`text-xs mt-1 font-medium ${
+                  formData.password === formData.confirmPassword ? "text-green-600" : "text-red-500"
+                }`}>
+                  {formData.password === formData.confirmPassword
+                    ? "✓ Passwords match"
+                    : "✗ Passwords do not match"}
+                </p>
+              )}
+
               {errors.confirmPassword && (
                 <p id="err-add-confirmPassword" role="alert" className="text-[#DF5C5D] text-sm">
                   {errors.confirmPassword}

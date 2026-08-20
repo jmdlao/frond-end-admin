@@ -1,17 +1,9 @@
-"use client";
+import React from 'react'
 
-import DashboardHeader from "@/app/components/dashboard-header";
-import KPICards from "@/app/components/kpi-cards";
-
-export default function DashboardPage() {
-  const handleRefresh = () => {
-    window.location.reload();
-  };
-
+const dashboard = () => {
   return (
-      <div className="space-y-6">
-        <DashboardHeader onRefresh={handleRefresh} />
-        <KPICards />
-      </div>
-  );
+    <div>Overview</div>
+  )
 }
+
+export default dashboard

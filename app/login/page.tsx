@@ -81,6 +81,7 @@ export default function LoginPage() {
           src="/imagelogin.png"
           alt="warehouse"
           fill
+          sizes="(max-width: 768px) 100vw, 50vw"
           className="object-cover"
         />
       </div>
@@ -88,27 +89,28 @@ export default function LoginPage() {
       {/* Right side - Login form */}
       <div className="flex flex-col justify-center items-center w-full md:w-1/2 mb-20">
         {/* Logo */}
-        <div className="mb-4">
+        <div className="mb-10">
           <Image
             src="/logo-black.png"
             alt="logo"
             width={250}
             height={100}
+            style={{ width: "auto", height: "auto" }}
             className="mx-auto"
             priority
             onError={() => console.error("Image failed to load")}
           />
         </div>
 
-        {/* Welcome Text */}
+        {/* Welcome Text
         <div className="text-center mb-6">
           <p className="text-2xl md:text-3xl font-bold">Welcome Back!</p>
           <p className="text-sm text-[#495057] mt-1">
             Please enter your account details
           </p>
-        </div>
+        </div> */}
 
-        <form onSubmit={handleLogin} className="w-full max-w-[400px]">
+        <form onSubmit={handleLogin} className="w-full max-w-[400px]" suppressHydrationWarning>
           {/* Error Message */}
           {errorMessage && (
             <div className="text-red-500 text-sm mb-4 text-center">
@@ -117,8 +119,10 @@ export default function LoginPage() {
           )}
 
           {/* Username Input */}
-          <div className="w-full mb-4">
-            <p className="mb-1 text-left text-[15px]">Username</p>
+          <div className="w-full mb-4" suppressHydrationWarning>
+            <label htmlFor={`username-${id}`} className="block mb-1 text-left text-[15px]">
+              Username
+            </label>
             <div className="relative">
               <input
                 id={`username-${id}`}
@@ -136,8 +140,10 @@ export default function LoginPage() {
           </div>
 
           {/* Password Input */}
-          <div className="w-full mb-4">
-            <p className="mb-1 text-left text-[15px]">Password</p>
+          <div className="w-full mb-4" suppressHydrationWarning>
+            <label htmlFor={`password-${id}`} className="block mb-1 text-left text-[15px]">
+              Password
+            </label>
             <div className="relative">
               <input
                 id={`password-${id}`}

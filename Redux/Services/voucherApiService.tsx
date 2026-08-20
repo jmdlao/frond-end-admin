@@ -61,18 +61,78 @@ const injectedRtkApi = api.injectEndpoints({
       CreateVoucherContollerResponse,
       UpdateVoucherControllerRequest
     >({
-      query: (query) => ({
-        url: UPDATE_VOUCHER,
-        method: "PUT",
-        headers: {
-          voucherid: query.voucherID || query.id || "",
-          id: query.voucherID || query.id || "",
-        },
-        body: query,
-      }),
+      query: (query) => {
+        const extractIdString = (val: any): string => {
+          if (!val) return "";
+          if (typeof val === "string") return val.trim();
+          if (typeof val === "object") {
+            if (val._id) return extractIdString(val._id);
+            if (val.id) return extractIdString(val.id);
+            if (val.$oid) return extractIdString(val.$oid);
+            if (typeof val.toString === "function" && val.toString() !== "[object Object]") {
+              return val.toString().trim();
+            }
+          }
+          return String(val).trim();
+        };
+
+        const targetId = extractIdString(query.voucherID || query.id || query._id);
+
+        const bodyPayload: any = { ...query };
+        bodyPayload._id = targetId;
+        bodyPayload.id = targetId;
+        bodyPayload.voucherID = targetId;
+        bodyPayload.voucherid = targetId;
+        bodyPayload.voucher_id = targetId;
+
+        if (bodyPayload.voucherStoreBranch) {
+          const sId = extractIdString(bodyPayload.voucherStoreBranch.storeID);
+          if (sId) {
+            bodyPayload.voucherStoreBranch = { storeID: sId };
+          } else {
+            delete bodyPayload.voucherStoreBranch;
+          }
+        }
+
+        if (bodyPayload.voucherTagID) {
+          if (Array.isArray(bodyPayload.voucherTagID)) {
+            bodyPayload.voucherTagID = bodyPayload.voucherTagID.map((item: any) => {
+              const bId = extractIdString(item.brandID);
+              const cId = extractIdString(item.categoryID);
+              const pId = extractIdString(item.productID);
+              if (bId) return { brandID: bId };
+              if (cId) return { categoryID: cId };
+              if (pId) return { productID: pId };
+              return item;
+            });
+          } else {
+            const bId = extractIdString(bodyPayload.voucherTagID.brandID);
+            const cId = extractIdString(bodyPayload.voucherTagID.categoryID);
+            const pId = extractIdString(bodyPayload.voucherTagID.productID);
+            if (bId) {
+              bodyPayload.voucherTagID = [{ brandID: bId }];
+            } else if (cId) {
+              bodyPayload.voucherTagID = [{ categoryID: cId }];
+            } else if (pId) {
+              bodyPayload.voucherTagID = [{ productID: pId }];
+            } else {
+              bodyPayload.voucherTagID = [];
+            }
+          }
+        }
+
+        return {
+          url: UPDATE_VOUCHER,
+          method: "PUT",
+          headers: {
+            voucherid: targetId,
+          },
+          body: bodyPayload,
+        };
+      },
     }),
   }),
-  overrideExisting: false,
+  overrideExisting: true,
 });
 
 
@@ -131,10 +191,18 @@ export type CreateVoucherControllerRequest = {
   voucherStartDate: string;
   voucherEndDate: string;
   voucherLimit: number;
-  voucherTagID: {
-    brandID?: string;
-    categoryID?: string;
-  };
+  voucherTag?: number;
+  voucherTagID?:
+    | Array<{
+        brandID?: string;
+        categoryID?: string;
+        productID?: string;
+      }>
+    | {
+        brandID?: string;
+        categoryID?: string;
+        productID?: string;
+      };
 };
 
 export type CreateVoucherContollerResponse = {
@@ -196,6 +264,7 @@ export type UpdateDiscountControllerRequest = CreateDiscountControllerRequest & 
 export type UpdateVoucherControllerRequest = Partial<CreateVoucherControllerRequest> & {
   voucherID?: string;
   id?: string;
+  _id?: string;
 };
 
 export { injectedRtkApi as enhancedApi };

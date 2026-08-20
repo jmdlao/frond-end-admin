@@ -554,17 +554,15 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
   const handleConfirmSubmit = async () => {
     setShowConfirm(false);
 
-    const payload = {
+    const payload: any = {
       userID: resolvedParams.id,
       firstName: formData.firstName || undefined,
       lastName: formData.lastName || undefined,
-      address: `${formData.cityTown}, ${formData.Province}` || undefined,
+      address: `${formData.cityTown}, ${formData.Province}`,
       birthDate: formData.birthDate || undefined,
       phoneNumber: formData.contactNumber || undefined,
       gender: formData.gender || undefined,
       username: formData.username || undefined,
-      password: formData.newPassword || undefined,
-      confirmPassword: formData.confirmPassword || undefined,
       userType:
         formData.userType.toLowerCase() === "super-admin"
           ? 0
@@ -583,6 +581,11 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
           : [],
     };
 
+    if (formData.newPassword && formData.newPassword.trim()) {
+      payload.password = formData.newPassword;
+      payload.confirmPassword = formData.confirmPassword;
+    }
+
     console.log("Payload:", payload);
     try {
       const updateUsersData = await UpdateUser(payload).unwrap();
@@ -591,11 +594,13 @@ const EditUserPage = ({ params }: { params: Promise<PageParams> }) => {
         window.location.href = "/users";
       }, 100);
     } catch (error: any) {
-      if (error.status === 404) {
-        console.error("API endpoint not found. Please check the URL.");
-      } else {
-        console.error("Error:", error);
-      }
+      console.error("Update User Error:", error);
+      const msg =
+        error?.data?.response?.message ||
+        error?.data?.message ||
+        error?.data?.errors ||
+        "Failed to update user. Please check form fields.";
+      alert(typeof msg === "string" ? msg : JSON.stringify(msg));
     }
   };
 

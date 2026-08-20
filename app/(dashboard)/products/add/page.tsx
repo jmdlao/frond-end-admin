@@ -223,7 +223,7 @@ export default function AddProductPage() {
                                                 Product Code <span className="text-[#DF5C5D]">*</span>
                                             </Label>
                                             <span className="text-[9px] ml-3    text-gray-500 text-right">
-                                                {newProduct.code?.length || 0}/10 (uppercase letters & numbers only)
+                                                {newProduct.code?.length || 0}/13 (uppercase letters & numbers only)
                                             </span>
                                         </div>
                                         <Input
@@ -232,10 +232,10 @@ export default function AddProductPage() {
                                                 let value = e.target.value
                                                 .toUpperCase()
                                                 .replace(/[^A-Z0-9]/g, ""); 
-                                                if (value.length > 10) value = value.slice(0, 10);
+                                                if (value.length > 13) value = value.slice(0, 13);
                                                 setNewProduct(p => ({ ...p, code: value }));
                                             }}
-                                            maxLength={10}
+                                            maxLength={13}
                                             className="bg-white shadow-sm"
                                             placeholder="Enter product code"
                                         />
@@ -349,15 +349,16 @@ export default function AddProductPage() {
                                         <Label className="text-sm font-medium">Selling Price <span className="text-[#DF5C5D]">*</span></Label>
                                         <Input
                                         type="number"
-                                        value={newProduct.sellingPrice}
+                                        value={newProduct.sellingPrice === 0 ? "" : newProduct.sellingPrice}
                                         onChange={(e) => {
-                                            let value = e.target.value.replace(/[^0-9.]/g, "");
+                                            let value = e.target.value.replace(/[^0-9.]/g, "").replace(/^0+(?=\d)/, "");
                                             if (value.length > 8) value = value.slice(0, 8);
                                             setNewProduct((prev) => ({
                                                 ...prev,
                                                 sellingPrice: value === "" ? 0 : parseFloat(value),
                                             }));
                                         }}
+                                        placeholder="0.00"
                                         min="0"
                                         step="0.01"
                                         className="bg-white shadow-sm"
@@ -368,16 +369,17 @@ export default function AddProductPage() {
                                         <Label className="text-sm font-medium">Price <span className="text-[#DF5C5D]">*</span></Label>
                                         <Input
                                         type="number"
-                                        value={newProduct.price}
+                                        value={newProduct.price === 0 ? "" : newProduct.price}
                                         onChange={(e) => {
                                             // at most 8 digits
-                                            let value = e.target.value.replace(/[^0-9.]/g, "");
+                                            let value = e.target.value.replace(/[^0-9.]/g, "").replace(/^0+(?=\d)/, "");
                                             if (value.length > 8) value = value.slice(0, 8);
                                             setNewProduct((prev) => ({
                                                 ...prev,  
                                                 price: value === "" ? 0 : parseFloat(value),
                                             }));
                                         }}
+                                        placeholder="0.00"
                                         min="0"
                                         step="0.01"
                                         className="bg-white shadow-sm"
@@ -414,15 +416,16 @@ export default function AddProductPage() {
                                     <Label className="text-sm font-medium">Stock Quantity <span className="text-[#DF5C5D]">*</span></Label>
                                     <Input
                                     type="number"
-                                    value={newProduct.stocks}
+                                    value={newProduct.stocks === 0 ? "" : newProduct.stocks}
                                     onChange={(e) => {
-                                        let value = e.target.value.replace(/[^0-9]/g, "");
+                                        let value = e.target.value.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
                                         if (value.length > 8) value = value.slice(0, 8);
                                         setNewProduct((prev) => ({
                                             ...prev,
-                                            stocks: value === "" ? 0 : parseInt(value),
+                                            stocks: value === "" ? 0 : parseInt(value, 10),
                                         }));
                                     }}
+                                    placeholder="0"
                                     min="0"
                                     className="bg-white shadow-sm"
                                     required

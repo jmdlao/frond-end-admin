@@ -32,12 +32,41 @@ const injectedRtkApi = api.injectEndpoints({
       UpdateUserControllerResponse,
       UpdateUserControllerRequest & { userID: string }
     >({
-      query: (query) => ({
-        url: UPDATE_USER,
-        method: "PUT",
-        headers: { userid: query.userID },
-        body: query,
-      }),
+      query: (query) => {
+        const extractIdString = (val: any): string => {
+          if (!val) return "";
+          if (typeof val === "string") return val.trim();
+          if (typeof val === "object") {
+            if (val._id) return extractIdString(val._id);
+            if (val.id) return extractIdString(val.id);
+            if (val.$oid) return extractIdString(val.$oid);
+            if (typeof val.toString === "function" && val.toString() !== "[object Object]") {
+              return val.toString().trim();
+            }
+          }
+          return String(val).trim();
+        };
+
+        const targetId = extractIdString(query.userID || (query as any).id || (query as any)._id);
+
+        const bodyPayload: any = { ...query };
+        bodyPayload.userID = targetId;
+
+        if (!bodyPayload.password) {
+          delete bodyPayload.password;
+          delete bodyPayload.confirmPassword;
+        }
+
+        return {
+          url: UPDATE_USER,
+          method: "PUT",
+          headers: {
+            userid: targetId,
+            id: targetId,
+          },
+          body: bodyPayload,
+        };
+      },
     }),
     userControllerFindID: build.query<
       UserControllerFindIDResponse,
@@ -50,7 +79,7 @@ const injectedRtkApi = api.injectEndpoints({
       }),
     }),
   }),
-  overrideExisting: false,
+  overrideExisting: true,
 });
 
 export type UserControllerFindAllResponse = {

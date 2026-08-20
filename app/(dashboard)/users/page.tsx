@@ -18,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { ChevronDownIcon, Pencil } from "lucide-react";
+import { ChevronDownIcon, Edit } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useState } from "react";
@@ -272,7 +272,7 @@ const UsersPage = () => {
                         <TableCell>
                           <span
                             className={cn(
-                              "inline-flex items-center justify-center rounded-full min-w-[80px] h-7 px-3 text-xs font-semibold capitalize",
+                              "inline-flex items-center justify-center rounded-full min-w-[80px] w-fit h-7 px-3 text-xs font-semibold capitalize whitespace-nowrap",
                               roleColor
                             )}
                           >
@@ -283,9 +283,11 @@ const UsersPage = () => {
                           <Button
                             variant="ghost"
                             size="icon"
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50"
                             onClick={() => router.push(`/users/${user.id}`)}
+                            title="Edit User"
                           >
-                            <Pencil className="h-4 w-4" />
+                            <Edit className="h-4 w-4" />
                           </Button>
                         </TableCell>
                       </TableRow>

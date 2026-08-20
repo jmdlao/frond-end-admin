@@ -5,17 +5,30 @@ import {
   ArrowLeft,
   CalendarIcon,
   ChevronDown,
+  Edit,
   Package,
   Receipt,
   Search,
+  Trash2,
   Upload,
   Users,
 } from "lucide-react";
+import { formatCurrency } from "@/lib/utils";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useId, useState } from "react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -40,6 +53,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -86,10 +106,12 @@ interface Product {
   image: string;
 }
 
+import { useProductsControllerFindAllQuery } from "@/Redux/Services/productsAPpiService";
 import {
   useEditStoreMutation,
   useStoreByIDControllerQuery,
   useStoreControllerFindAllQuery,
+  useUpdateProductStockMutation,
 } from "@/Redux/Services/storeApiService";
 
 const formatPhoneNumber = (value: string): string => {
@@ -545,12 +567,186 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
     page: currentTransactionPage,
   });
 
+  const { data: allStoresData, refetch: allStoresRefetch } = useStoreControllerFindAllQuery({ limit: 100 });
+  const { data: globalProductsData } = useProductsControllerFindAllQuery({ pageNumber: 1, limit: 100, search: undefined });
+
+  const getAllocatedInOtherStores = (productId: string): number => {
+    if (!allStoresData?.response?.body?.content) return 0;
+    let totalAllocated = 0;
+    allStoresData.response.body.content.forEach((store: any) => {
+      if (String(store._id) !== String(resolvedParams.id)) {
+        const storeProductsList = store.storeProducts || store.storeProduct || [];
+        storeProductsList.forEach((sp: any) => {
+          const pId = typeof sp.productID === "object" ? sp.productID?._id : sp.productID;
+          if (String(pId) === String(productId)) {
+            totalAllocated += Number(sp.productQuantity || 0);
+          }
+        });
+      }
+    });
+    return totalAllocated;
+  };
+
   // console.log(
   //   "Store Transactions",
   //   storeTransactionsData?.response?.body?.content[0] || "No records found"
-  // );
-
   const [editStore] = useEditStoreMutation();
+  const [updateProductStock] = useUpdateProductStockMutation();
+
+  const [showDeleteProductModal, setShowDeleteProductModal] = useState(false);
+  const [productToDelete, setProductToDelete] = useState<{ id: string; name: string } | null>(null);
+  const [isDeletingProduct, setIsDeletingProduct] = useState(false);
+
+  const handleOpenDeleteProduct = (product: { id: string; name: string }) => {
+    setProductToDelete(product);
+    setShowDeleteProductModal(true);
+  };
+
+  const handleConfirmDeleteProduct = async () => {
+    if (!productToDelete) return;
+    setIsDeletingProduct(true);
+    try {
+      // 1. Primary call as requested by backend developer: PUT /store/updateProductStock
+      try {
+        await updateProductStock({
+          storeID: resolvedParams.id,
+          productID: productToDelete.id,
+          productQuantity: 0,
+        }).unwrap();
+      } catch (endpointError) {
+        // 2. Fallback call: PUT /store/updateStore with filtered product list
+        const rawStoreProducts =
+          storeProductsData?.response?.body?.content[0]?.storeProduct || [];
+
+        const updatedStoreProducts = rawStoreProducts
+          .filter((p: any) => {
+            if (!p.productID) return false;
+            const pId = typeof p.productID === "object" ? p.productID?._id : p.productID;
+            if (!pId) return false;
+            return String(pId) !== String(productToDelete.id);
+          })
+          .map((p: any) => {
+            const pId = typeof p.productID === "object" ? p.productID?._id : p.productID;
+            return {
+              productID: String(pId),
+              productQuantity: Number(p.productQuantity) || 0,
+            };
+          });
+
+        await editStore({
+          storeID: resolvedParams.id,
+          storeProducts: updatedStoreProducts,
+        }).unwrap();
+      }
+
+      await storeProductRefetch();
+      if (allStoresRefetch) await allStoresRefetch();
+      setShowDeleteProductModal(false);
+      setProductToDelete(null);
+    } catch (error) {
+      console.error("Failed to delete product from store:", error);
+    } finally {
+      setIsDeletingProduct(false);
+    }
+  };
+
+  const [showDeleteAllProductsModal, setShowDeleteAllProductsModal] = useState(false);
+  const [isDeletingAllProducts, setIsDeletingAllProducts] = useState(false);
+
+  const handleConfirmDeleteAllProducts = async () => {
+    setIsDeletingAllProducts(true);
+    try {
+      // Primary method: clear storeProducts array
+      await editStore({
+        storeID: resolvedParams.id,
+        storeProducts: [],
+      }).unwrap();
+
+      // Secondary cleanup per item for any branch stock listeners
+      if (products && products.length > 0) {
+        for (const prod of products) {
+          try {
+            await updateProductStock({
+              storeID: resolvedParams.id,
+              productID: prod.id,
+              productQuantity: 0,
+            }).unwrap();
+          } catch {
+            // silent catch
+          }
+        }
+      }
+
+      await storeProductRefetch();
+      if (allStoresRefetch) await allStoresRefetch();
+      setShowDeleteAllProductsModal(false);
+    } catch (error) {
+      console.error("Failed to delete all products from store:", error);
+    } finally {
+      setIsDeletingAllProducts(false);
+    }
+  };
+
+  const [showEditProductModal, setShowEditProductModal] = useState(false);
+  const [productToEdit, setProductToEdit] = useState<{
+    id: string;
+    name: string;
+    sku: string;
+    image: string;
+    stock: number;
+  } | null>(null);
+  const [newProductStock, setNewProductStock] = useState<number>(0);
+  const [isUpdatingProductStock, setIsUpdatingProductStock] = useState(false);
+
+  const handleOpenEditProduct = (product: {
+    id: string;
+    name: string;
+    sku: string;
+    image: string;
+    stock: number;
+  }) => {
+    setProductToEdit(product);
+    setNewProductStock(product.stock);
+    setShowEditProductModal(true);
+  };
+
+  const handleSaveEditProductStock = async () => {
+    if (!productToEdit) return;
+    setIsUpdatingProductStock(true);
+    try {
+      const rawStoreProducts =
+        storeProductsData?.response?.body?.content[0]?.storeProduct || [];
+
+      const updatedStoreProducts = rawStoreProducts
+        .filter((p: any) => {
+          if (!p.productID) return false;
+          const pId = typeof p.productID === "object" ? p.productID?._id : p.productID;
+          return Boolean(pId);
+        })
+        .map((p: any) => {
+          const pId = typeof p.productID === "object" ? p.productID?._id : p.productID;
+          const isTarget = String(pId) === String(productToEdit.id);
+          return {
+            productID: String(pId),
+            productQuantity: isTarget ? Number(newProductStock) : (Number(p.productQuantity) || 0),
+          };
+        });
+
+      await editStore({
+        storeID: resolvedParams.id,
+        storeProducts: updatedStoreProducts,
+      }).unwrap();
+
+      await storeProductRefetch();
+      if (allStoresRefetch) await allStoresRefetch();
+      setShowEditProductModal(false);
+      setProductToEdit(null);
+    } catch (error) {
+      console.error("Failed to update product stock:", error);
+    } finally {
+      setIsUpdatingProductStock(false);
+    }
+  };
 
   const navStore = storeData?.response?.body?.content;
 
@@ -628,24 +824,29 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
       })
     ) || [];
 
-  const products =
-    storeProductsData?.response?.body?.content[0]?.storeProduct
-      ?.filter((product: any) => product.productID)
-      .map((product: any) => ({
-        id: product.productID?._id,
-        image: product.productID?.productImage || "/LOGO.png",
-        name: product.productID?.productName,
-        sku: product.productID?.productCode,
-        category: product.productID?.categoriesID.categoryName,
-        price: product.productID?.productSellingPrice,
-        stock: product.productQuantity,
+  const storeContent = storeProductsData?.response?.body?.content?.[0] as any;
+  const rawStoreProductsList = storeContent?.storeProduct || storeContent?.storeProducts || [];
+
+  const products = rawStoreProductsList
+    .filter((product: any) => product && product.productID)
+    .map((product: any) => {
+      const prodObj = typeof product.productID === "object" ? product.productID : product;
+      return {
+        id: prodObj?._id || product.productID,
+        image: prodObj?.productImage || "/LOGO.png",
+        name: prodObj?.productName || "Unnamed Product",
+        sku: prodObj?.productCode || "",
+        category: prodObj?.categoriesID?.categoryName || "Uncategorized",
+        price: prodObj?.productSellingPrice ?? prodObj?.productPrice ?? 0,
+        stock: product.productQuantity ?? 0,
         status:
-          product.productID?.productStatus === 1
+          prodObj?.productStatus === 1
             ? "In Stock"
-            : product.productID?.productStatus === 0
+            : prodObj?.productStatus === 0
             ? "Disabled"
             : "Out of Stock",
-      })) || [];
+      };
+    });
 
   const transactionTotalPages =
     storeTransactionsData?.response?.body?.pagination?.totalPages || 1;
@@ -674,6 +875,47 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
   const [editedProduct, setEditedProduct] = useState<Product | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
   const [storeProducts, setStoreProducts] = useState<Product[]>(products ?? []);
+
+  // --- Category & Sort Filters for Store Products ---
+  const [selectedStoreProductCategory, setSelectedStoreProductCategory] = useState<string>("all");
+  const [storeProductSortBy, setStoreProductSortBy] = useState<string>("default");
+
+  const storeCategoriesList = Array.from(
+    new Set(
+      products
+        .map((p: any) => p.category)
+        .filter((cat: any): cat is string => Boolean(cat) && cat !== "Uncategorized")
+    )
+  ).sort();
+
+  const filteredStoreProducts = products.filter((product: any) => {
+    const matchesCategory =
+      selectedStoreProductCategory === "all" ||
+      (product.category || "").toLowerCase() === selectedStoreProductCategory.toLowerCase();
+
+    const matchesSearch =
+      !searchQuery ||
+      (product.name || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (product.sku || "").toLowerCase().includes(searchQuery.toLowerCase());
+
+    return matchesCategory && matchesSearch;
+  });
+
+  const sortedStoreProducts = [...filteredStoreProducts].sort((a: any, b: any) => {
+    if (storeProductSortBy === "a-z") {
+      return (a.name || "").localeCompare(b.name || "");
+    }
+    if (storeProductSortBy === "z-a") {
+      return (b.name || "").localeCompare(a.name || "");
+    }
+    if (storeProductSortBy === "price-low-high") {
+      return (Number(a.price) || 0) - (Number(b.price) || 0);
+    }
+    if (storeProductSortBy === "price-high-low") {
+      return (Number(b.price) || 0) - (Number(a.price) || 0);
+    }
+    return 0;
+  });
 
   // Reset current page when tab changes
   const handleTabChange = (value: string) => {
@@ -1012,12 +1254,20 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
             </TabsList>
             {activeTab === "products" ? (
               <div className="flex items-center gap-2 mb-3">
-                {/* <AddProductModal categories={categories} /> */}
                 <Button
                   onClick={() => setShowAddProductModal(true)}
                   className="bg-[#DF5C5D] hover:bg-[#DF5C5D]/90"
                 >
                   Add Product
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleteAllProductsModal(true)}
+                  disabled={!products || products.length === 0}
+                  className="border-red-500 text-red-500 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Trash2 className="w-4 h-4 mr-1.5" />
+                  Delete All Products
                 </Button>
               </div>
             ) : activeTab === "cashiers" ? (
@@ -1033,13 +1283,13 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
           </div>
 
           {/* Search Bar and Date Range for Transactions */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-col gap-2 py-1 overflow-visible">
+            <div className="flex items-center gap-4 py-1 overflow-visible">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
                   placeholder="Search..."
-                  className="pl-10"
+                  className="pl-10 h-10 rounded-lg border border-gray-300"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
@@ -1136,6 +1386,48 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
                   </Popover>
                 </div>
               )}
+              {activeTab === "products" && (
+                <div className="flex items-center gap-2 px-0.5">
+                  {/* Category Filter Dropdown */}
+                  <div className="w-44 px-0.5">
+                    <Select
+                      value={selectedStoreProductCategory}
+                      onValueChange={setSelectedStoreProductCategory}
+                    >
+                      <SelectTrigger className="w-full h-10 bg-white border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#DF5C5D]">
+                        <SelectValue placeholder="All Categories" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white z-50">
+                        <SelectItem value="all">All Categories</SelectItem>
+                        {storeCategoriesList.map((cat: any) => (
+                          <SelectItem key={cat} value={cat}>
+                            {cat}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Sort Filter Dropdown */}
+                  <div className="w-48 px-0.5">
+                    <Select
+                      value={storeProductSortBy}
+                      onValueChange={setStoreProductSortBy}
+                    >
+                      <SelectTrigger className="w-full h-10 bg-white border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#DF5C5D]">
+                        <SelectValue placeholder="Sort by: Default" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-white z-50">
+                        <SelectItem value="default">Sort by: Default</SelectItem>
+                        <SelectItem value="a-z">Name: A - Z</SelectItem>
+                        <SelectItem value="z-a">Name: Z - A</SelectItem>
+                        <SelectItem value="price-low-high">Price: Lowest to Highest</SelectItem>
+                        <SelectItem value="price-high-low">Price: Highest to Lowest</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1221,7 +1513,7 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
                           {transaction.items}
                         </TableCell>
                         <TableCell className="border-x-0">
-                          ₱{transaction.amount.toFixed(2)}
+                          ₱{Number(transaction.amount ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                         </TableCell>
                         <TableCell className="border-x-0">
                           <Button
@@ -1293,7 +1585,7 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
                                           {detail.productName}
                                         </TableCell>
                                         <TableCell>
-                                          ₱{detail.price.toFixed(2)}
+                                          ₱{Number(detail.price ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </TableCell>
                                         <TableCell>{detail.quantity}</TableCell>
                                         {/* <TableCell>
@@ -1301,9 +1593,7 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
                                           </TableCell> */}
                                         <TableCell>
                                           ₱
-                                          {(
-                                            detail.price * detail.quantity
-                                          ).toFixed(2)}
+                                          {Number(detail.price * detail.quantity).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </TableCell>
                                       </TableRow>
                                     )
@@ -1548,14 +1838,14 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {products?.length === 0 ? (
+                {sortedStoreProducts.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="text-center py-4">
                       No products found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  paginateData(products ?? []).map((product, index) => (
+                  paginateData(sortedStoreProducts).map((product, index) => (
                     <TableRow
                       key={product.id}
                       className="hover:bg-gray-50 border-x-0"
@@ -1578,7 +1868,7 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
                         {product.category}
                       </TableCell>
                       <TableCell className="border-x-0">
-                        ₱{product.price.toFixed(2)}
+                        {formatCurrency(product.price)}
                       </TableCell>
                       <TableCell className="border-x-0">
                         {product.stock} items
@@ -1594,39 +1884,26 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
                         </div>
                       </TableCell>
                       <TableCell className="border-x-0">
-                        {/* <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEdit(product)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button> */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={
-                            () => {} /* Handle delete product logic here */
-                          }
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="lucide lucide-trash-2 text-red-500"
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                            onClick={() => handleOpenEditProduct(product)}
+                            title="Edit Stock Quantity"
                           >
-                            <path d="M3 6h18" />
-                            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                            <line x1="10" x2="10" y1="11" y2="17" />
-                            <line x1="14" x2="14" y1="11" y2="17" />
-                          </svg>
-                        </Button>
+                            <Edit className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-[#DF5C5D] hover:text-[#DF5C5D]/90 hover:bg-red-50"
+                            onClick={() => handleOpenDeleteProduct(product)}
+                            title="Remove Product"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -1850,11 +2127,12 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
       <AddProduct
         modalStatus={showAddProductModal}
         changeModalStatus={setShowAddProductModal}
-        onProductsUpdated={() => {
-          storeProductRefetch();
+        onProductsUpdated={async () => {
+          await storeProductRefetch();
+          if (allStoresRefetch) await allStoresRefetch();
         }}
-        initialQuantities={products.reduce((acc, product) => {
-          acc[product.id] = product.stock;
+        initialQuantities={products.reduce((acc: Record<string, number>, product: any) => {
+          if (product.id) acc[product.id] = product.stock;
           return acc;
         }, {} as Record<string, number>)}
       />
@@ -1867,6 +2145,172 @@ const StoreDetailsPage = ({ params }: { params: Promise<{ id: string }> }) => {
         }}
         currentCashiers={cashiers}
       />
+
+      {/* Delete Product Confirmation Dialog */}
+      <AlertDialog
+        open={showDeleteProductModal}
+        onOpenChange={setShowDeleteProductModal}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Product</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove &quot;{productToDelete?.name}&quot; from this store branch?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingProduct}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteProduct}
+              disabled={isDeletingProduct}
+              className="bg-red-500 hover:bg-red-600"
+            >
+              {isDeletingProduct ? "Removing..." : "Remove"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete All Products Confirmation Dialog */}
+      <AlertDialog
+        open={showDeleteAllProductsModal}
+        onOpenChange={setShowDeleteAllProductsModal}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-600 flex items-center gap-2">
+              <Trash2 className="w-5 h-5" />
+              Remove All Products from Store?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove all {products?.length || 0} products from this store branch ({storeDetails?.name || "Store"})? This will reset all branch stock allocations.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeletingAllProducts}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDeleteAllProducts}
+              disabled={isDeletingAllProducts}
+              className="bg-red-500 hover:bg-red-600 text-white"
+            >
+              {isDeletingAllProducts ? "Removing All..." : "Remove All Products"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      {/* Edit Product Stock Modal */}
+      <Dialog
+        open={showEditProductModal}
+        onOpenChange={setShowEditProductModal}
+      >
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Stock Quantity</DialogTitle>
+          </DialogHeader>
+          {productToEdit && (() => {
+            const rawStoreProducts = storeProductsData?.response?.body?.content[0]?.storeProduct || [];
+            const targetSp = rawStoreProducts.find((p: any) => {
+              const pId = typeof p.productID === "object" ? p.productID?._id : p.productID;
+              return String(pId) === String(productToEdit.id);
+            });
+            const mainProd = globalProductsData?.response?.body?.content?.find(
+              (p: any) => String(p._id) === String(productToEdit.id)
+            );
+            const mainStock = Number(
+              mainProd?.productQuantity ??
+              targetSp?.productID?.productQuantity ??
+              productToEdit.stock ??
+              0
+            );
+            const allocatedElsewhere = getAllocatedInOtherStores(productToEdit.id);
+            const maxAvailable = Math.max(0, mainStock - allocatedElsewhere);
+            const isInvalid = newProductStock > maxAvailable;
+
+            return (
+              <div className="space-y-4 py-4">
+                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
+                  <img
+                    src={productToEdit.image}
+                    alt={productToEdit.name}
+                    className="w-12 h-12 object-cover rounded"
+                  />
+                  <div>
+                    <h4 className="font-semibold text-sm">{productToEdit.name}</h4>
+                    <p className="text-xs text-gray-500">SKU: {productToEdit.sku}</p>
+                    <p className="text-xs text-blue-600 font-medium">
+                      Available: {maxAvailable} items ({allocatedElsewhere} allocated to other stores)
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="stockQuantity">Store Stock Quantity</Label>
+                  <Input
+                    id="stockQuantity"
+                    type="number"
+                    min="0"
+                    max={maxAvailable}
+                    value={newProductStock === 0 ? "" : newProductStock}
+                    onChange={(e) => {
+                      let val = e.target.value.replace(/[^0-9]/g, "").replace(/^0+(?=\d)/, "");
+                      if (val.length > 8) val = val.slice(0, 8);
+                      setNewProductStock(val === "" ? 0 : parseInt(val, 10));
+                    }}
+                    className={isInvalid ? "border-red-500 bg-red-50" : ""}
+                    placeholder="Enter stock quantity"
+                  />
+                  {isInvalid && (
+                    <p className="text-xs text-[#DF5C5D] font-semibold mt-1">
+                      Invalid: Only {maxAvailable} stocks available ({allocatedElsewhere} allocated to other stores)
+                    </p>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowEditProductModal(false)}
+              disabled={isUpdatingProductStock}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveEditProductStock}
+              disabled={
+                isUpdatingProductStock ||
+                !productToEdit ||
+                (() => {
+                  const rawStoreProducts = storeProductsData?.response?.body?.content[0]?.storeProduct || [];
+                  const targetSp = rawStoreProducts.find((p: any) => {
+                    const pId = typeof p.productID === "object" ? p.productID?._id : p.productID;
+                    return String(pId) === String(productToEdit.id);
+                  });
+                  const mainProd = globalProductsData?.response?.body?.content?.find(
+                    (p: any) => String(p._id) === String(productToEdit.id)
+                  );
+                  const mainStock = Number(
+                    mainProd?.productQuantity ??
+                    targetSp?.productID?.productQuantity ??
+                    productToEdit.stock ??
+                    0
+                  );
+                  const allocatedElsewhere = getAllocatedInOtherStores(productToEdit.id);
+                  const maxAvailable = Math.max(0, mainStock - allocatedElsewhere);
+                  return newProductStock > maxAvailable;
+                })()
+              }
+              className="bg-[#DF5C5D] hover:bg-[#DF5C5D]/90"
+            >
+              {isUpdatingProductStock ? "Saving..." : "Save Quantity"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

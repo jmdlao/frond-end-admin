@@ -1,7 +1,15 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Pagination,
   PaginationContent,
@@ -18,7 +26,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Clock, Search } from "lucide-react";
+import { useEditStoreMutation } from "@/Redux/Services/storeApiService";
+import { Clock, Edit, Search } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { PageHeader } from "./components/page-header";
@@ -36,15 +45,21 @@ interface StoreTableProps {
   stores: Store[];
   selectedRows: string[];
   setSelectedRows: (rows: string[]) => void;
-  onEdit: (id: string) => void;
-  onViewSchedule: (id: string) => void;
+  onEdit: (store: Store) => void;
+  onViewDetails: (id: string) => void;
+  loading?: boolean;
 }
 
 const formatTime = (time: string) => {
+  if (!time) return "";
+  if (/am|pm/i.test(time)) {
+    return time.trim();
+  }
   const [hours, minutes] = time.split(":");
+  if (hours === undefined || minutes === undefined) return time;
   const date = new Date();
-  date.setHours(parseInt(hours));
-  date.setMinutes(parseInt(minutes));
+  date.setHours(parseInt(hours, 10));
+  date.setMinutes(parseInt(minutes, 10));
   return date.toLocaleTimeString("en-US", {
     hour: "numeric",
     minute: "2-digit",
@@ -54,22 +69,24 @@ const formatTime = (time: string) => {
 
 const StoreTable = ({
   stores,
-  selectedRows,
-  setSelectedRows,
   onEdit,
-  onViewSchedule,
+  onViewDetails,
   loading,
-}: StoreTableProps & { loading: boolean }) => {
+}: StoreTableProps) => {
   return (
     <Table>
       <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead className="w-[50px] pl-10">No.</TableHead>
-          <TableHead className="w-[200px]">Store Name</TableHead>
-          <TableHead className="w-[250px]">Location</TableHead>
-          <TableHead className="w-[150px]">Opening Time</TableHead>
-          <TableHead className="w-[150px]">Closing Time</TableHead>
-          <TableHead className="w-[100px] text-center">Action</TableHead>
+        <TableRow className="bg-gray-100 border-x-0">
+          <TableHead className="w-[50px] pl-10 border-x-0">No.</TableHead>
+          <TableHead className="w-[200px] border-x-0">Store Name</TableHead>
+          <TableHead className="w-[250px] border-x-0">
+            Branch Location
+          </TableHead>
+          <TableHead className="w-[150px] border-x-0">Opening Time</TableHead>
+          <TableHead className="w-[150px] border-x-0">Closing Time</TableHead>
+          <TableHead className="text-center w-[120px] border-x-0">
+            Action
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -105,15 +122,6 @@ const StoreTable = ({
           <TableRow className="w-full">
             <TableCell colSpan={6} className="h-24 text-center">
               <span>No stores found</span>
-              <div className="mt-4 flex justify-center">
-                <Button
-                  variant="outline"
-                  onClick={() => window.location.reload()}
-                  className="text-[#DF5C5D] border-[#DF5C5D] hover:bg-[#DF5C5D]/10"
-                >
-                  Reload Page
-                </Button>
-              </div>
             </TableCell>
           </TableRow>
         ) : (
@@ -135,13 +143,26 @@ const StoreTable = ({
                 </div>
               </TableCell>
               <TableCell className="text-center">
-                <Button
-                  variant="ghost"
-                  className="text-[#DF5C5D] hover:text-[#DF5C5D]/90"
-                  onClick={() => onEdit(store.id)}
-                >
-                  View
-                </Button>
+                <div className="flex items-center justify-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                    onClick={() => onEdit(store)}
+                    title="Edit Store Branch"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-[#DF5C5D] hover:text-[#DF5C5D]/90 font-medium"
+                    onClick={() => onViewDetails(store.id)}
+                    title="View Store Details"
+                  >
+                    View
+                  </Button>
+                </div>
               </TableCell>
             </TableRow>
           ))
@@ -161,21 +182,55 @@ const StoreContent = () => {
     isLoading,
     searchQuery,
     setSearchQuery,
+    storeRefetch,
   } = useStore();
   const [selectedRows, setSelectedRows] = useState<string[]>([]);
-  const [pages, setPages] = useState<number[]>([]);
-  const [showLeftEllipsis, setShowLeftEllipsis] = useState(false);
-  const [showRightEllipsis, setShowRightEllipsis] = useState(false);
-  const itemsPerPage = 10;
-  const searchParams = useSearchParams();
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [selectedStore, setSelectedStore] = useState<Store | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editLocation, setEditLocation] = useState("");
+  const [editOpenTime, setEditOpenTime] = useState("");
+  const [editCloseTime, setEditCloseTime] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleEdit = (id: string) => {
+  const [editStoreMutation] = useEditStoreMutation();
+
+  const handleEdit = (store: Store) => {
+    setSelectedStore(store);
+    setEditName(store.name);
+    setEditLocation(store.location);
+    setEditOpenTime(store.openingTime || "08:00 AM");
+    setEditCloseTime(store.closingTime || "09:00 PM");
+    setShowEditModal(true);
+  };
+
+  const handleViewDetails = (id: string) => {
     router.push(`/store/${id}`);
   };
 
-  const handleViewSchedule = (id: string) => {
-    router.push(`/store/${id}/schedule`);
+  const handleSaveStoreEdit = async () => {
+    if (!selectedStore) return;
+    setIsSubmitting(true);
+    try {
+      await editStoreMutation({
+        storeID: selectedStore.id,
+        storeName: editName,
+        storeLocation: editLocation,
+        storeOpenClosing: `${editOpenTime} - ${editCloseTime}`,
+      }).unwrap();
+
+      if (storeRefetch) storeRefetch();
+      setShowEditModal(false);
+      setSelectedStore(null);
+    } catch (error) {
+      console.error("Failed to edit store:", error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  const showLeftEllipsis = currentPage > 3;
+  const showRightEllipsis = currentPage < totalPages - 2;
 
   return (
     <div className="flex flex-col w-full p-4 gap-4 text-[14px]">
@@ -202,7 +257,7 @@ const StoreContent = () => {
         selectedRows={selectedRows}
         setSelectedRows={setSelectedRows}
         onEdit={handleEdit}
-        onViewSchedule={handleViewSchedule}
+        onViewDetails={handleViewDetails}
         loading={isLoading}
       />
 
@@ -260,6 +315,71 @@ const StoreContent = () => {
           </PaginationContent>
         </Pagination>
       </div>
+
+      {/* Edit Store Branch Modal */}
+      <Dialog open={showEditModal} onOpenChange={setShowEditModal}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Edit Store Branch</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-sm">
+            <div className="space-y-1">
+              <Label htmlFor="editStoreName">Store Name</Label>
+              <Input
+                id="editStoreName"
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="Enter store name"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="editStoreLocation">Branch Location / Address</Label>
+              <Input
+                id="editStoreLocation"
+                value={editLocation}
+                onChange={(e) => setEditLocation(e.target.value)}
+                placeholder="Enter branch location"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label htmlFor="editOpenTime">Opening Time</Label>
+                <Input
+                  id="editOpenTime"
+                  value={editOpenTime}
+                  onChange={(e) => setEditOpenTime(e.target.value)}
+                  placeholder="08:00 AM"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="editCloseTime">Closing Time</Label>
+                <Input
+                  id="editCloseTime"
+                  value={editCloseTime}
+                  onChange={(e) => setEditCloseTime(e.target.value)}
+                  placeholder="09:00 PM"
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setShowEditModal(false)}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSaveStoreEdit}
+              disabled={isSubmitting}
+              className="bg-[#DF5C5D] hover:bg-[#DF5C5D]/90"
+            >
+              {isSubmitting ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

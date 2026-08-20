@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { formatCurrency } from "@/lib/utils";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DropdownMenu,
@@ -342,7 +343,7 @@ const Step2Page = () => {
                         />
                       </TableCell>
                       <TableCell>{product.name}</TableCell>
-                      <TableCell>₱{product.price.toFixed(2)}</TableCell>
+                      <TableCell>{formatCurrency(product.price)}</TableCell>
                       <TableCell>{product.stocks} Items</TableCell>
                     </TableRow>
                   ))

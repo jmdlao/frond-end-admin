@@ -28,6 +28,7 @@ interface StoreContextType {
   isLoading: boolean;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+  storeRefetch: () => void;
 }
 
 import { useStoreControllerFindAllQuery } from "@/Redux/Services/storeApiService";
@@ -117,6 +118,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         isLoading,
         searchQuery,
         setSearchQuery,
+        storeRefetch,
       }}
     >
       {children}

@@ -9,6 +9,7 @@ const injectedRtkApi = api.injectEndpoints({
     >({
       query: ({
         page,
+        limit,
         storeCashiers,
         storeProducts,
         storeTransactions,
@@ -18,6 +19,7 @@ const injectedRtkApi = api.injectEndpoints({
         headers: {},
         params: {
           page,
+          limit,
           storeCashiers,
           storeProducts,
           storeTransactions,
@@ -53,8 +55,22 @@ const injectedRtkApi = api.injectEndpoints({
         body: query,
       }),
     }),
+    updateProductStock: build.mutation<
+      EditStoreResponse,
+      { storeID: string; productID: string; productQuantity: number }
+    >({
+      query: ({ storeID, productID, productQuantity }) => ({
+        url: "/store/updateProductStock",
+        method: "PUT",
+        headers: { storeid: storeID },
+        body: {
+          productID,
+          productQuantity,
+        },
+      }),
+    }),
   }),
-  overrideExisting: false,
+  overrideExisting: true,
 });
 
 export type StoreByIDControllerResponse = {
@@ -83,6 +99,7 @@ export type StoreByIDControllerRequest = {
 export type storeControllerFindAllResponse = StoreResponse;
 export type storeControllerFindAllRequest = {
   page?: number;
+  limit?: number;
   storeCashiers?: string;
   storeProducts?: string;
   storeTransactions?: string;
@@ -118,6 +135,8 @@ export type EditStoreResponse = {
 
 export type EditStoreRequest = {
   storeName?: string;
+  storeLocation?: string;
+  storeOpenClosing?: string;
   storeProducts?: {
     productID: string;
     productQuantity: number;
@@ -178,4 +197,5 @@ export const {
   useStoreByIDControllerQuery,
   useCreateStoreMutation,
   useEditStoreMutation,
+  useUpdateProductStockMutation,
 } = injectedRtkApi;

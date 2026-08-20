@@ -22,9 +22,16 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Edit, Plus, Search, ChevronLeft, ChevronRight, Settings, Trash } from "lucide-react";
+import { Edit, Plus, Search, ChevronLeft, ChevronRight, Settings, Trash2 } from "lucide-react";
 import { CategoryBrandDrawer } from "./category-brand-drawer";
-import { Skeleton } from "@/components/ui/skeleton"; 
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 // Redux hooks
 import {
@@ -33,6 +40,10 @@ import {
   useProductsControllerFindAllQuery,
   useDeleteProductMutation
 } from "@/Redux/Services/productsAPpiService";
+import {
+  useEditStoreMutation,
+  useStoreControllerFindAllQuery,
+} from "@/Redux/Services/storeApiService";
 
 // Product type
 interface Product {
@@ -82,6 +93,8 @@ const ProductsPage = () => {
 
   const [editProduct] = useEditProductsMutation();
   const [addProduct] = useAddProductControllerMutation();
+  const [editStore] = useEditStoreMutation();
+  const { data: allStoresData } = useStoreControllerFindAllQuery({ limit: 100 });
 
   // --- Products Mapping ---
   const products: Product[] =
@@ -99,6 +112,39 @@ const ProductsPage = () => {
       status: product?.productStatus ?? false,
       vat: product?.productVatOrNoVat ?? 0,
     })) || [];
+
+  // --- Category & Sorting Filters ---
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<string>("default");
+
+  const categoriesList = Array.from(
+    new Set(
+      products
+        .map((p) => p.category)
+        .filter((cat): cat is string => Boolean(cat) && cat !== "Uncategorized")
+    )
+  ).sort();
+
+  const filteredProducts = products.filter((product) => {
+    if (selectedCategory === "all") return true;
+    return (product.category || "").toLowerCase() === selectedCategory.toLowerCase();
+  });
+
+  const sortedProducts = [...filteredProducts].sort((a, b) => {
+    if (sortBy === "a-z") {
+      return a.name.localeCompare(b.name);
+    }
+    if (sortBy === "z-a") {
+      return b.name.localeCompare(a.name);
+    }
+    if (sortBy === "price-low-high") {
+      return (a.price ?? 0) - (b.price ?? 0);
+    }
+    if (sortBy === "price-high-low") {
+      return (b.price ?? 0) - (a.price ?? 0);
+    }
+    return 0;
+  });
 
   // --- Effects ---
   // Refetch on page change
@@ -147,7 +193,7 @@ const ProductsPage = () => {
     if (!productToToggle) return;
     try {
       await editProduct({
-          productID: productToToggle.id?.toString() ?? "",
+        productID: productToToggle.id?.toString() ?? "",
         productStatus: productToToggle.newStatus ? 1 : 0,
         productName: productToToggle.name,
         productDescription: productToToggle.description,
@@ -172,12 +218,62 @@ const ProductsPage = () => {
 
   const confirmDelete = async () => {
     if (!productToDelete) return;
+    setHasError("");
+    setSuccessMessage("");
     try {
       await deleteProduct({ productID: productToDelete.id }).unwrap();
       setSuccessMessage("Product deleted successfully.");
       refetchProducts();
-    } catch (error) {
-      setHasError("Failed to delete product.");
+    } catch (error: any) {
+      const isConflict =
+        error?.status === 409 ||
+        error?.originalStatus === 409 ||
+        error?.data?.response?.code === 409;
+
+      if (isConflict) {
+        try {
+          const stores = allStoresData?.response?.body?.content || [];
+          for (const store of stores) {
+            const storeProducts = (store as any).storeProducts || (store as any).storeProduct || [];
+            const hasProd = storeProducts.some((sp: any) => {
+              const pId = typeof sp.productID === "object" ? sp.productID?._id : sp.productID;
+              return String(pId) === String(productToDelete.id);
+            });
+
+            if (hasProd) {
+              const updatedStoreProducts = storeProducts
+                .filter((sp: any) => {
+                  const pId = typeof sp.productID === "object" ? sp.productID?._id : sp.productID;
+                  return String(pId) !== String(productToDelete.id);
+                })
+                .map((sp: any) => ({
+                  productID: typeof sp.productID === "object" ? sp.productID?._id : sp.productID,
+                  productQuantity: Number(sp.productQuantity) || 0,
+                }));
+
+              await editStore({
+                storeID: store._id,
+                storeProducts: updatedStoreProducts,
+              }).unwrap();
+            }
+          }
+
+          // Retry deleting product after cleaning up store allocations
+          await deleteProduct({ productID: productToDelete.id }).unwrap();
+          setSuccessMessage("Product deleted successfully.");
+          refetchProducts();
+          return;
+        } catch (cleanupErr) {
+          console.error("Frontend store cleanup before delete failed:", cleanupErr);
+        }
+      }
+
+      const msg =
+        error?.data?.response?.message ||
+        error?.data?.message ||
+        error?.message ||
+        "Cannot delete product because it is allocated to store branch(es) or linked to active transactions.";
+      setHasError(msg);
     } finally {
       setShowDeleteDialog(false);
       setProductToDelete(null);
@@ -275,17 +371,52 @@ const ProductsPage = () => {
           {/* Drawer */}
           <CategoryBrandDrawer open={showDrawer} onOpenChange={setShowDrawer} />
 
-          {/* Search Bar */}
-          <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search products..."
-            className="pl-10"
-            value={tempSearchQuery}
-            onChange={(e) => setTempSearchQuery(e.target.value)}
-          />
-          
-        </div>
+          {/* Search & Filter Bar */}
+          <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center p-1 overflow-visible">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search products..."
+                className="pl-10 h-10 rounded-lg border border-gray-300"
+                value={tempSearchQuery}
+                onChange={(e) => setTempSearchQuery(e.target.value)}
+              />
+            </div>
+
+            {/* Category Filter Dropdown */}
+            <div className="w-full md:w-48 px-0.5">
+              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                <SelectTrigger className="w-full h-10 bg-white border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#DF5C5D]">
+                  <SelectValue placeholder="All Categories" />
+                </SelectTrigger>
+                <SelectContent className="bg-white z-50">
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categoriesList.map((cat) => (
+                    <SelectItem key={cat} value={cat}>
+                      {cat}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Sort Filter Dropdown */}
+            <div className="w-full md:w-52 px-0.5">
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-full h-10 bg-white border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-[#DF5C5D]">
+                  <SelectValue placeholder="Sort by: Default" />
+                </SelectTrigger>
+                <SelectContent className="bg-white z-50">
+                  <SelectItem value="default">Sort by: Default</SelectItem>
+                  <SelectItem value="a-z">Name: A - Z</SelectItem>
+                  <SelectItem value="z-a">Name: Z - A</SelectItem>
+                  <SelectItem value="price-low-high">Price: Lowest to Highest</SelectItem>
+                  <SelectItem value="price-high-low">Price: Highest to Lowest</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
       </div>
     </div>
 
@@ -340,17 +471,17 @@ const ProductsPage = () => {
                   </TableRow>
                 ))}
               </TableBody>
-            ) : products.length === 0 ? (
+            ) : sortedProducts.length === 0 ? (
               <TableBody>
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-4">
-                    NO PRODUCTS
+                    NO PRODUCTS FOUND
                   </TableCell>
                 </TableRow>
               </TableBody>
             ) : (
               <TableBody>
-                {products.map((product, index) => (
+                {sortedProducts.map((product, index) => (
                   <TableRow key={product.id} className="hover:bg-gray-50 border-x-0">
                     <TableCell className="pl-10 border-x-0 max-w-[50px] w-[50px] sm:max-w-[80px] sm:w-[80px] whitespace-nowrap min-w-0">
                       {index + 1}
@@ -399,18 +530,19 @@ const ProductsPage = () => {
                       <div className="flex gap-1 justify-center hover:cursor-pointer items-center" 
                       >
                         <Link href={`/products/${product.code}/edit`}>
-                          <Button variant="ghost" size="icon" className="text-[#DF5C5D] hover:text-[#DF5C5D]/90">
+                          <Button variant="ghost" size="icon" className="text-blue-600 hover:text-blue-700 hover:bg-blue-50">
                             <Edit className="h-4 w-4" />
                           </Button>
                         </Link>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="text-[#DF5C5D] hover:text-[#DF5C5D]/90"
+                          className="text-[#DF5C5D] hover:text-[#DF5C5D]/90 hover:bg-red-50"
                           onClick={() => handleDelete(product)}
                           disabled={isDeleting}
+                          title="Delete Product"
                         >
-                          <Trash className="h-4 w-4" />
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     </TableCell>

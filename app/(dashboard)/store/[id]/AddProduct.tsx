@@ -3,6 +3,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -14,12 +15,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { formatCurrency } from "@/lib/utils";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
 // redux RTK
 import { useProductsControllerFindAllQuery } from "@/Redux/Services/productsAPpiService";
-import { useEditStoreMutation } from "@/Redux/Services/storeApiService";
+import {
+  useEditStoreMutation,
+  useStoreControllerFindAllQuery,
+  useUpdateProductStockMutation,
+} from "@/Redux/Services/storeApiService";
 
 interface AddProductProps {
   modalStatus: boolean;
@@ -41,6 +47,7 @@ interface product {
   brand?: string;
   vat?: number;
 }
+
 export function AddProduct({
   modalStatus,
   changeModalStatus,
@@ -55,6 +62,7 @@ export function AddProduct({
   const [allProducts, setAllProducts] = useState<product[]>([]);
 
   const [editStore] = useEditStoreMutation();
+  const [updateProductStock] = useUpdateProductStockMutation();
 
   const {
     data: productsData,
@@ -66,15 +74,27 @@ export function AddProduct({
     search: undefined,
   });
 
+  const { data: allStoresData } = useStoreControllerFindAllQuery({ limit: 100 });
+
+  const getAllocatedInOtherStores = (productId: string): number => {
+    if (!allStoresData?.response?.body?.content) return 0;
+    let totalAllocated = 0;
+    allStoresData.response.body.content.forEach((store: any) => {
+      if (String(store._id) !== String(params.id)) {
+        const storeProductsList = store.storeProducts || store.storeProduct || [];
+        storeProductsList.forEach((sp: any) => {
+          const pId = typeof sp.productID === "object" ? sp.productID?._id : sp.productID;
+          if (String(pId) === String(productId)) {
+            totalAllocated += Number(sp.productQuantity || 0);
+          }
+        });
+      }
+    });
+    return totalAllocated;
+  };
+
   const totalProductPages =
     productsData?.response?.body?.pagination?.totalPages || 0;
-
-  console.log("All Products:", allProducts);
-  console.log("Selected Products:", selectedProducts);
-  console.log("Current Page:", currentPage);
-  console.log("Total Product Pages:", totalProductPages);
-  console.log("step", step);
-  console.log("Quantities:", quantities);
 
   const products: product[] =
     productsData?.response?.body?.content?.map(
@@ -89,48 +109,108 @@ export function AddProduct({
         category: product?.categoriesID?.categoryName || "Uncategorized",
         status: product?.productStatus ?? false,
         brand: product?.productBrandID?.brandName || "Unbranded",
-        vat: product?.productVatOrNoVat ?? 0,
+        vat: product?.productHasVat?.vatPercent || 0,
       })
     ) || [];
 
-  const handleDeleteClick = (productId: string) => {
-    setSelectedProducts((prev) =>
-      prev.filter((product) => product.id !== productId)
-    );
+  const handleDeleteClick = (id: string) => {
+    setSelectedProducts((prev) => prev.filter((p) => p.id !== id));
     setQuantities((prev) => {
       const newQuantities = { ...prev };
-      delete newQuantities[productId];
+      delete newQuantities[id];
       return newQuantities;
     });
   };
+
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
   const handleSubmit = async () => {
-    await setQuantities((prev) => {
-      const mixedQuantities = { ...initialQuantities, ...prev };
-      return mixedQuantities;
+    setErrorMessage(null);
+    if (selectedProducts.length === 0) return;
+
+    // Helper to validate clean 24-character hexadecimal Mongo ObjectIds
+    const isValidMongoId = (id: string) =>
+      Boolean(id) &&
+      id !== "undefined" &&
+      id !== "null" &&
+      /^[0-9a-fA-F]{24}$/.test(id);
+
+    const existingStoreProducts = Object.entries(initialQuantities)
+      .filter(([productId]) => isValidMongoId(String(productId)))
+      .map(([productId, quantity]) => ({
+        productID: String(productId),
+        productQuantity: Number(quantity) || 0,
+      }));
+
+    const newProducts = selectedProducts
+      .filter((p) => isValidMongoId(String(p.id)))
+      .map((p) => {
+        const allocatedElsewhere = getAllocatedInOtherStores(p.id);
+        const availableStock = Math.max(0, p.stocks - allocatedElsewhere);
+        const userQty = quantities[p.id];
+        // Default to 1 (or availableStock if less) if quantity is not explicitly set or set to 0
+        const finalQty =
+          userQty !== undefined && userQty > 0
+            ? userQty
+            : Math.min(1, availableStock);
+
+        return {
+          productID: String(p.id),
+          productQuantity: Number(finalQty),
+        };
+      });
+
+    if (newProducts.length === 0) {
+      setErrorMessage("No valid products selected to add.");
+      return;
+    }
+
+    // Combine existing products with newly added/updated products
+    const updatedStoreProducts = [...existingStoreProducts];
+    newProducts.forEach((np) => {
+      const existingIdx = updatedStoreProducts.findIndex(
+        (item) => String(item.productID) === String(np.productID)
+      );
+      if (existingIdx >= 0) {
+        updatedStoreProducts[existingIdx] = np;
+      } else {
+        updatedStoreProducts.push(np);
+      }
     });
 
-    const quantitiesArray = Object.entries(quantities).map(
-      ([productId, quantity]) => ({
-        productId,
-        quantity,
-      })
-    );
+    // 1. Primary method: PUT /store/updateStore with complete storeProducts array
+    let updateStoreSuccess = false;
+    try {
+      await editStore({
+        storeID: params.id,
+        storeProducts: updatedStoreProducts,
+      }).unwrap();
+      updateStoreSuccess = true;
+    } catch (error: any) {
+      console.error("Failed to edit store products array:", error);
+    }
 
-    editStore({
-      storeID: params.id,
-      storeProducts: quantitiesArray.map((product) => ({
-        productID: product.productId,
-        productQuantity: quantities[product.quantity] || 1,
-      })),
-    })
-      .unwrap()
-      .then(() => {
-        if (changeModalStatus) changeModalStatus(false);
-        if (onProductsUpdated) onProductsUpdated();
-      })
-      .catch((error) => {
-        console.error("Failed to edit store:", error);
-      });
+    // 2. Secondary method: PUT /store/updateProductStock per item
+    for (const np of newProducts) {
+      try {
+        await updateProductStock({
+          storeID: params.id,
+          productID: np.productID,
+          productQuantity: np.productQuantity,
+        }).unwrap();
+        updateStoreSuccess = true;
+      } catch (err) {
+        console.error("Failed to update product stock:", err);
+      }
+    }
+
+    if (!updateStoreSuccess) {
+      setErrorMessage("Failed to add products to store. Please try again.");
+      return;
+    }
+
+    if (changeModalStatus) changeModalStatus(false);
+    if (onProductsUpdated) onProductsUpdated();
   };
 
   useEffect(() => {
@@ -138,30 +218,43 @@ export function AddProduct({
       setStep(1);
       setCurrentPage(1);
       setSelectedProducts([]);
-      setAllProducts([]);
+      setQuantities({});
+      setErrorMessage(null);
       productRefetch();
-      setAllProducts(products);
     }
   }, [modalStatus]);
 
   useEffect(() => {
-    if (productsData?.response?.body?.content) {
-      setAllProducts((prev) => {
-        const existingIds = new Set(prev.map((p) => p.id));
-        const newProducts = products.filter((p) => !existingIds.has(p.id));
-        return [...prev, ...newProducts];
-      });
+    if (modalStatus && products.length > 0) {
+      if (currentPage === 1) {
+        setAllProducts(products);
+      } else {
+        setAllProducts((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newProducts = products.filter((p) => !existingIds.has(p.id));
+          return [...prev, ...newProducts];
+        });
+      }
     }
-  }, [productsData]);
+  }, [productsData, currentPage, modalStatus]);
 
   return (
     <Dialog open={modalStatus} onOpenChange={changeModalStatus}>
-      <DialogContent className="max-w-4xl">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>Add Products</DialogTitle>
+          <DialogDescription className="sr-only">
+            Select products and allocate branch stock quantities.
+          </DialogDescription>
         </DialogHeader>
 
-        {/* stepper kuno */}
+        {errorMessage && (
+          <div className="p-3 text-sm text-red-700 bg-red-100 border border-red-400 rounded">
+            {errorMessage}
+          </div>
+        )}
+
+        {/* stepper */}
         <div className="max-w-4xl">
           <div className="flex items-center gap-4 mb-6">
             <div className="flex items-center gap-2">
@@ -169,65 +262,75 @@ export function AddProduct({
                 className={`w-8 h-8 rounded-full flex items-center justify-center ${
                   step === 1
                     ? "bg-[#DF5C5D] text-white"
-                    : "bg-[#ec7979] text-white"
+                    : "bg-[#DF5C5D] text-white"
                 }`}
               >
                 1
               </div>
-              <span
-                className={
-                  step === 1 ? "text-[#DF5C5D] font-medium" : "text-[#ec7979]"
-                }
-              >
-                Choose Products
+              <span className="font-medium text-[#DF5C5D]">
+                Select Products
               </span>
             </div>
-            <div
-              className={`flex-1 h-[2px] ${
-                step === 2 ? "bg-[#ec7979]" : "bg-gray-200"
-              }`}
-            />
+            <div className="flex-1 h-0.5 bg-gray-200" />
             <div className="flex items-center gap-2">
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                  step === 2 ? "bg-[#DF5C5D] text-white" : "bg-gray-200"
+                  step === 2
+                    ? "bg-[#DF5C5D] text-white"
+                    : "bg-gray-200 text-gray-600"
                 }`}
               >
                 2
               </div>
-              <span className={step === 2 ? "text-[#DF5C5D] font-medium" : ""}>
-                Verification
+              <span
+                className={`font-medium ${
+                  step === 2 ? "text-[#DF5C5D]" : "text-gray-500"
+                }`}
+              >
+                Quantity Allocation
               </span>
             </div>
           </div>
         </div>
 
         {step === 1 ? (
-          <div className="border rounded-lg overflow-hidden">
-            <div className="max-h-[400px] overflow-auto">
-              <Table className="min-w-full table-fixed">
+          <div className="flex-1 min-h-0 space-y-4">
+            <div className="border rounded-lg max-h-[45vh] overflow-y-auto">
+              <Table>
                 <TableHeader>
-                  <TableRow>
-                    <TableHead className="sticky top-0 z-10 bg-white w-[50px]">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className="w-[50px] sticky top-0 z-10 bg-white">
                       <Checkbox
+                        checked={
+                          allProducts
+                            .filter(
+                              (product) => !(product.id in initialQuantities)
+                            )
+                            .every((p) =>
+                              selectedProducts.some(
+                                (selected) => selected.id === p.id
+                              )
+                            ) &&
+                          allProducts.filter(
+                            (product) => !(product.id in initialQuantities)
+                          ).length > 0
+                        }
                         onCheckedChange={(checked: boolean) => {
+                          const availableSelectable = allProducts.filter(
+                            (p) => !(p.id in initialQuantities)
+                          );
                           if (checked) {
-                            setSelectedProducts(allProducts);
-                            setQuantities(
-                              allProducts.reduce((acc, product) => {
-                                acc[product.id] = product.stocks > 0 ? 1 : 0;
-                                return acc;
-                              }, {} as Record<string, number>)
-                            );
+                            setSelectedProducts(availableSelectable);
+                            const newQuantities: Record<string, number> = {};
+                            availableSelectable.forEach((p) => {
+                              newQuantities[p.id] = 0;
+                            });
+                            setQuantities(newQuantities);
                           } else {
                             setSelectedProducts([]);
-                            setQuantities(initialQuantities);
+                            setQuantities({});
                           }
                         }}
-                        checked={
-                          selectedProducts.length > 0 &&
-                          selectedProducts.length === allProducts.length
-                        }
                       />
                     </TableHead>
                     <TableHead className="sticky top-0 z-10 bg-white">
@@ -251,45 +354,74 @@ export function AddProduct({
                 <TableBody>
                   {allProducts
                     .filter((product) => !(product.id in initialQuantities))
-                    .map((product) => (
-                      <TableRow key={product.id} className="hover:bg-gray-50">
-                        <TableCell className="w-[50px]">
-                          <Checkbox
-                            checked={selectedProducts.some(
-                              (p) => p.id === product.id
-                            )}
-                            onCheckedChange={(checked: boolean) => {
-                              setSelectedProducts((prev) =>
-                                checked
-                                  ? [...prev, product]
-                                  : prev.filter((p) => p.id !== product.id)
-                              );
-                              setQuantities((prev) => {
-                                const newQuantities = { ...prev };
-                                if (checked) {
-                                  newQuantities[product.id] =
-                                    product.stocks > 1 ? 1 : 0;
-                                } else {
-                                  delete newQuantities[product.id];
-                                }
-                                return newQuantities;
-                              });
-                            }}
-                          />
-                        </TableCell>
-                        <TableCell>{product.code}</TableCell>
-                        <TableCell>
-                          <img
-                            src={product.image}
-                            alt={product.name}
-                            className="w-12 h-12 object-cover rounded"
-                          />
-                        </TableCell>
-                        <TableCell>{product.name}</TableCell>
-                        <TableCell>₱{product.price.toFixed(2)}</TableCell>
-                        <TableCell>{product.stocks} items</TableCell>
-                      </TableRow>
-                    ))}
+                    .map((product) => {
+                      const allocatedElsewhere = getAllocatedInOtherStores(
+                        product.id
+                      );
+                      const availableStock = Math.max(
+                        0,
+                        product.stocks - allocatedElsewhere
+                      );
+
+                      return (
+                        <TableRow
+                          key={product.id}
+                          className="hover:bg-gray-50"
+                        >
+                          <TableCell className="w-[50px]">
+                            <Checkbox
+                              disabled={availableStock === 0}
+                              checked={selectedProducts.some(
+                                (p) => p.id === product.id
+                              )}
+                              onCheckedChange={(checked: boolean) => {
+                                setSelectedProducts((prev) =>
+                                  checked
+                                    ? [...prev, product]
+                                    : prev.filter((p) => p.id !== product.id)
+                                );
+                                setQuantities((prev) => {
+                                  const newQuantities = { ...prev };
+                                  if (checked) {
+                                    newQuantities[product.id] = 0;
+                                  } else {
+                                    delete newQuantities[product.id];
+                                  }
+                                  return newQuantities;
+                                });
+                              }}
+                            />
+                          </TableCell>
+                          <TableCell>{product.code}</TableCell>
+                          <TableCell>
+                            <img
+                              src={product.image}
+                              alt={product.name}
+                              className="w-12 h-12 object-cover rounded"
+                            />
+                          </TableCell>
+                          <TableCell>{product.name}</TableCell>
+                          <TableCell>{formatCurrency(product.price)}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span
+                                className={`font-semibold text-xs ${
+                                  availableStock > 0
+                                    ? "text-blue-600"
+                                    : "text-red-500"
+                                }`}
+                              >
+                                {availableStock} available
+                              </span>
+                              <span className="text-[11px] text-gray-500">
+                                Total: {product.stocks} ({allocatedElsewhere} in
+                                other stores)
+                              </span>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   {isProductFetching && (
                     <TableRow>
                       <TableCell colSpan={6} className="text-center">
@@ -327,9 +459,8 @@ export function AddProduct({
             </div>
           </div>
         ) : step === 2 ? (
-          <div className="space-y-4">
-            <div className="border rounded-lg">
-              <div className="max-h-[400px] overflow-auto">
+          <div className="flex-1 min-h-0 space-y-4">
+            <div className="border rounded-lg max-h-[45vh] overflow-y-auto">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
@@ -349,104 +480,138 @@ export function AddProduct({
                         </TableCell>
                       </TableRow>
                     ) : (
-                      selectedProducts.map((product) => (
-                        <TableRow key={product.id} className="hover:bg-gray-50">
-                          <TableCell className="w-[50px]">
-                            {product.code}
-                          </TableCell>
-                          <TableCell>
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                              className="w-12 h-12 object-cover rounded"
-                            />
-                          </TableCell>
-                          <TableCell>{product.name}</TableCell>
-                          <TableCell>₱{product.price.toFixed(2)}</TableCell>
-                          <TableCell>
-                            <input
-                              type="number"
-                              min={1}
-                              max={product.stocks}
-                              value={quantities[product.id] ?? 1}
-                              onChange={(e) => {
-                                const value = Math.max(
-                                  1,
-                                  Math.min(
-                                    Number(e.target.value),
-                                    product.stocks
-                                  )
-                                );
-                                setQuantities((prev) => ({
-                                  ...prev,
-                                  [product.id]: value,
-                                }));
-                              }}
-                              className="w-20 border rounded px-2 py-1 text-center"
-                              disabled={product.stocks === 0}
-                            />{" "}
-                            / {product.stocks} items
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              onClick={() => handleDeleteClick(product.id)}
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="lucide lucide-trash-2 text-red-500"
+                      selectedProducts.map((product) => {
+                        const allocatedElsewhere = getAllocatedInOtherStores(
+                          product.id
+                        );
+                        const availableStock = Math.max(
+                          0,
+                          product.stocks - allocatedElsewhere
+                        );
+                        const currentQty = quantities[product.id] ?? 0;
+                        const isInvalid = currentQty > availableStock;
+
+                        return (
+                          <TableRow
+                            key={product.id}
+                            className="hover:bg-gray-50"
+                          >
+                            <TableCell className="w-[50px]">
+                              {product.code}
+                            </TableCell>
+                            <TableCell>
+                              <img
+                                src={product.image}
+                                alt={product.name}
+                                className="w-12 h-12 object-cover rounded"
+                              />
+                            </TableCell>
+                            <TableCell>{product.name}</TableCell>
+                            <TableCell>{formatCurrency(product.price)}</TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-1">
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={availableStock}
+                                    value={
+                                      quantities[product.id] === undefined
+                                        ? 0
+                                        : quantities[product.id]
+                                    }
+                                    onChange={(e) => {
+                                      const rawVal = e.target.value;
+                                      const inputVal =
+                                        rawVal === "" ? 0 : Number(rawVal);
+                                      setQuantities((prev) => ({
+                                        ...prev,
+                                        [product.id]: inputVal,
+                                      }));
+                                    }}
+                                    className={`w-20 border rounded px-2 py-1 text-center ${
+                                      isInvalid ? "border-red-500 bg-red-50" : ""
+                                    }`}
+                                    disabled={availableStock === 0}
+                                  />
+                                  <span className="text-xs text-gray-500">
+                                    / {availableStock} available (
+                                    {allocatedElsewhere} in other stores)
+                                  </span>
+                                </div>
+                                {isInvalid && (
+                                  <span className="text-xs text-[#DF5C5D] font-semibold">
+                                    Invalid: Only {availableStock} stocks available
+                                  </span>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                onClick={() => handleDeleteClick(product.id)}
                               >
-                                <path d="M3 6h18" />
-                                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                                <line x1="10" x2="10" y1="11" y2="17" />
-                                <line x1="14" x2="14" y1="11" y2="17" />
-                              </svg>
-                            </Button>
-                          </TableCell>
-                        </TableRow>
-                      ))
+                                <svg
+                                  xmlns="http://www.w3.org/2000/svg"
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  className="lucide lucide-trash-2 text-red-500"
+                                >
+                                  <path d="M3 6h18" />
+                                  <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                                  <line x1="10" x2="10" y1="11" y2="17" />
+                                  <line x1="14" x2="14" y1="11" y2="17" />
+                                </svg>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
               </div>
             </div>
-          </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-4 mt-4">
-          <h1>&nbsp;</h1>
-          <div className="flex justify-end">
+        <div className="flex justify-end items-center gap-2 pt-4 border-t mt-auto">
+          <Button
+            variant="outline"
+            onClick={() => {
+              setStep(step === 1 ? 2 : 1);
+            }}
+            disabled={step === 1 && selectedProducts.length === 0}
+          >
+            {step === 1 ? "Next Step" : "Previous Step"}
+          </Button>
+          {step === 2 ? (
             <Button
-              variant="outline"
-              className="mt-4"
+              className="bg-[#DF5C5D] hover:bg-[#DF5C5D]/90"
               onClick={() => {
-                setStep(step === 1 ? 2 : 1);
+                handleSubmit();
               }}
+              disabled={
+                selectedProducts.length === 0 ||
+                selectedProducts.some((p) => {
+                  const avail = Math.max(
+                    0,
+                    p.stocks - getAllocatedInOtherStores(p.id)
+                  );
+                  const qty = quantities[p.id] ?? 0;
+                  return qty > avail;
+                })
+              }
             >
-              {step === 1 ? "Next Step" : "Previous Step"}
+              Submit
             </Button>
-            {step === 2 ? (
-              <Button
-                className="mt-4 ml-2 bg-[#DF5C5D] hover:bg-[#DF5C5D]/90"
-                onClick={() => {
-                  handleSubmit();
-                  if (changeModalStatus) changeModalStatus(false);
-                }}
-                disabled={selectedProducts.length === 0}
-              >
-                Submit
-              </Button>
-            ) : null}
-          </div>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

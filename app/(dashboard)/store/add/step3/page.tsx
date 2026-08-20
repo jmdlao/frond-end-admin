@@ -69,7 +69,7 @@ const Step3Page = () => {
     name: product.name,
     code: product.code,
     price: product.price,
-    quantity: 1,
+    quantity: (product as any).quantity || product.stocks || 1,
     stocks: product.stocks,
     image: product.image,
   }));

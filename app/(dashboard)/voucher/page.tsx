@@ -1,10 +1,11 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
 import {
   Check,
   ChevronsUpDown,
+  Edit,
   Percent,
   Plus,
   Receipt,
@@ -176,7 +177,15 @@ const VoucherPage = () => {
     voucherStatus: number;
     voucherStartDate: string;
     voucherEndDate: string;
+    voucherCategory?: number;
+    voucherStoreBranch?: any;
+    voucherTag?: number;
+    voucherTagID?: any;
   } | null>(null);
+
+  const [editTags, setEditTags] = useState<{ id: string; text: string }[]>([]);
+  const [editTempTags, setEditTempTags] = useState<{ id: string; text: string }[]>([]);
+  const [openEditBranchModal, setOpenEditBranchModal] = useState(false);
 
   const [showEditDiscountModal, setShowEditDiscountModal] = useState(false);
   const [editDiscountData, setEditDiscountData] = useState<{
@@ -198,21 +207,67 @@ const VoucherPage = () => {
   const totalDiscountPage =
     discountData?.response?.body?.pagination?.totalPages || 0;
 
-  const vouchersLists = voucherContentApi?.map((voucher: any) => ({
-    id: voucher._id,
-    name: voucher.voucherName,
-    promoCode: voucher.voucherCode,
-    discountType: voucher.voucherType === 0 ? "amount" : "percentage",
-    value: voucher.voucherValue,
-    category: voucher.voucherCategory,
-    startDate: voucher.voucherStartDate,
-    endDate: voucher.voucherEndDate,
-    storeBranch: voucher.voucherStoreBranch?.storeID?.storeName ?? "",
-    voucherStatus: voucher.voucherStatus,
-    voucherLimit: voucher.voucherLimit,
-    voucherTag: voucher.voucherTag,
-    voucherTagID: voucher.voucherTagID,
+  const extractIdString = (val: any): string => {
+    if (!val) return "";
+    if (typeof val === "string") return val.trim();
+    if (typeof val === "object") {
+      if (val._id) return extractIdString(val._id);
+      if (val.id) return extractIdString(val.id);
+      if (val.$oid) return extractIdString(val.$oid);
+      if (typeof val.toString === "function" && val.toString() !== "[object Object]") {
+        return val.toString().trim();
+      }
+    }
+    return String(val).trim();
+  };
+
+  const storesContent = storeData?.response?.body?.content || [];
+  const storesDictionary = storesContent.reduce<Record<string, string>>(
+    (acc: any, store: any) => {
+      if (store?._id && store?.storeName) {
+        acc[store._id] = store.storeName;
+      }
+      return acc;
+    },
+    {}
+  );
+
+  const branchesArray = Object.entries(storesDictionary).map(([id, name]) => ({
+    id,
+    name,
   }));
+
+  const vouchersLists = voucherContentApi?.map((voucher: any) => {
+    const rawStore = voucher.voucherStoreBranch;
+    const storeID = extractIdString(
+      rawStore?.storeID ||
+      (Array.isArray(rawStore) && rawStore[0]?.storeID) ||
+      rawStore
+    );
+    const storeBranchName =
+      (typeof rawStore?.storeID === "object" && rawStore?.storeID?.storeName) ||
+      (Array.isArray(rawStore) && typeof rawStore[0]?.storeID === "object" && rawStore[0]?.storeID?.storeName) ||
+      storesDictionary[storeID] ||
+      "";
+
+    return {
+      id: extractIdString(voucher._id || voucher.id || voucher.voucherID || voucher.voucherid),
+      name: voucher.voucherName,
+      promoCode: voucher.voucherCode,
+      discountType: voucher.voucherType === 0 ? "amount" : "percentage",
+      value: voucher.voucherValue,
+      category: voucher.voucherCategory,
+      startDate: voucher.voucherStartDate,
+      endDate: voucher.voucherEndDate,
+      storeBranch: storeBranchName,
+      storeID: storeID,
+      voucherStatus: voucher.voucherStatus,
+      voucherLimit: voucher.voucherLimit,
+      voucherTag: voucher.voucherTag,
+      voucherTagID: voucher.voucherTagID,
+      rawVoucher: voucher,
+    };
+  });
 
   const discountsLists = discountContentApi?.map((discount: any) => ({
     id: discount._id,
@@ -234,20 +289,6 @@ const VoucherPage = () => {
   const brandLists = brandContentApi?.map((brand: any) => ({
     id: brand._id,
     name: brand.brandName,
-  }));
-
-  const storesContent = storeData?.response?.body?.content || [];
-  const storesDictionary = storesContent.reduce<Record<string, string>>(
-    (acc, store) => {
-      acc[store._id] = store.storeName;
-      return acc;
-    },
-    {}
-  );
-
-  const branchesArray = Object.entries(storesDictionary).map(([id, name]) => ({
-    id,
-    name,
   }));
 
   const filteredBranches = branchesArray.filter((branch) =>
@@ -311,12 +352,12 @@ const VoucherPage = () => {
           voucherEndDate: newPromo.endDate,
           voucherLimit: 1000,
           voucherTagID: (() => {
-            if (newPromo.voucherTag.toLowerCase() === "category") {
-              return { categoryID: productCategory.id };
-            } else if (newPromo.voucherTag.toLowerCase() === "brand") {
-              return { brandID: productBrand.id };
+            if (newPromo.voucherTag.toLowerCase() === "category" && productCategory.id) {
+              return [{ categoryID: productCategory.id }];
+            } else if (newPromo.voucherTag.toLowerCase() === "brand" && productBrand.id) {
+              return [{ brandID: productBrand.id }];
             } else {
-              return {};
+              return [];
             }
           })(),
         };
@@ -351,8 +392,51 @@ const VoucherPage = () => {
   };
 
   const handleOpenEditVoucher = (voucherItem: any) => {
+    let formattedTagID: any = {};
+    if (voucherItem.voucherTagID) {
+      if (Array.isArray(voucherItem.voucherTagID) && voucherItem.voucherTagID.length > 0) {
+        const first = voucherItem.voucherTagID[0];
+        if (first.brandID || first.productBrand) {
+          const b = first.brandID || first.productBrand;
+          const bId = typeof b === "object" ? b._id : b;
+          if (bId) formattedTagID = { brandID: bId };
+        } else if (first.categoryID || first.productCategory) {
+          const c = first.categoryID || first.productCategory;
+          const cId = typeof c === "object" ? c._id : c;
+          if (cId) formattedTagID = { categoryID: cId };
+        }
+      } else if (typeof voucherItem.voucherTagID === "object") {
+        formattedTagID = voucherItem.voucherTagID;
+      }
+    }
+
+    const resolvedId = extractIdString(
+      voucherItem.id ||
+      voucherItem._id ||
+      voucherItem.voucherID ||
+      voucherItem.rawVoucher?._id ||
+      voucherItem.rawVoucher?.id
+    );
+
+    const storeIdResolved = extractIdString(
+      voucherItem.storeID ||
+      voucherItem.voucherStoreBranch?.storeID ||
+      voucherItem.voucherStoreBranch ||
+      voucherItem.rawVoucher?.voucherStoreBranch?.storeID ||
+      voucherItem.rawVoucher?.voucherStoreBranch
+    );
+
+    if (storeIdResolved) {
+      const storeNameFound = storesDictionary[storeIdResolved] || voucherItem.storeBranch || "Store Branch";
+      setEditTags([{ id: storeIdResolved, text: storeNameFound }]);
+      setEditTempTags([{ id: storeIdResolved, text: storeNameFound }]);
+    } else {
+      setEditTags([]);
+      setEditTempTags([]);
+    }
+
     setEditVoucherData({
-      id: voucherItem.id,
+      id: resolvedId,
       voucherName: voucherItem.name || "",
       voucherCode: voucherItem.promoCode || "",
       voucherType: voucherItem.discountType === "percentage" ? 1 : 0,
@@ -361,16 +445,54 @@ const VoucherPage = () => {
       voucherStatus: voucherItem.voucherStatus ?? 1,
       voucherStartDate: voucherItem.startDate ? voucherItem.startDate.split("T")[0] : "",
       voucherEndDate: voucherItem.endDate ? voucherItem.endDate.split("T")[0] : "",
+      voucherCategory: typeof voucherItem.category === "number" ? voucherItem.category : 0,
+      voucherStoreBranch: storeIdResolved ? { storeID: storeIdResolved } : undefined,
+      voucherTag: typeof voucherItem.voucherTag === "number" ? voucherItem.voucherTag : 0,
+      voucherTagID: formattedTagID,
     });
     setShowEditVoucherModal(true);
+  };
+
+  const toggleEditBranch = (branch: { id: string; name: string }) => {
+    setEditTempTags((prev) => {
+      const exists = prev.find((tag) => tag.id === branch.id);
+      if (exists) {
+        return prev.filter((tag) => tag.id !== branch.id);
+      }
+      return [...prev, { id: branch.id, text: branch.name }];
+    });
+  };
+
+  const handleConfirmEditBranchSelection = () => {
+    setEditTags(editTempTags);
+    setOpenEditBranchModal(false);
   };
 
   const handleSaveEditVoucher = async () => {
     if (!editVoucherData) return;
     try {
+      const targetId = extractIdString(editVoucherData.id);
+      if (!targetId) {
+        alert("Error: Voucher ID missing. Please refresh the page and try again.");
+        return;
+      }
+
+      const storeID = editTags.length > 0 ? editTags[0].id : extractIdString(editVoucherData.voucherStoreBranch?.storeID || editVoucherData.voucherStoreBranch);
+      const voucherStoreBranch = storeID ? { storeID } : undefined;
+
+      const brandID = extractIdString(editVoucherData.voucherTagID?.brandID);
+      const categoryID = extractIdString(editVoucherData.voucherTagID?.categoryID);
+      let voucherTagID: any = [];
+      if (brandID) {
+        voucherTagID = [{ brandID }];
+      } else if (categoryID) {
+        voucherTagID = [{ categoryID }];
+      }
+
       await updateVoucher({
-        voucherID: editVoucherData.id,
-        id: editVoucherData.id,
+        _id: targetId,
+        voucherID: targetId,
+        id: targetId,
         voucherName: editVoucherData.voucherName,
         voucherCode: editVoucherData.voucherCode,
         voucherType: editVoucherData.voucherType,
@@ -379,12 +501,43 @@ const VoucherPage = () => {
         voucherStatus: Number(editVoucherData.voucherStatus),
         voucherStartDate: editVoucherData.voucherStartDate,
         voucherEndDate: editVoucherData.voucherEndDate,
+        voucherCategory: editVoucherData.voucherCategory,
+        voucherStoreBranch,
+        voucherTag: editVoucherData.voucherTag,
+        voucherTagID,
       }).unwrap();
+
       setSuccessMessage("Successfully Updated Voucher");
       setShowEditVoucherModal(false);
-      voucherRefetch();
-    } catch (error) {
-      console.error("Error updating voucher:", error);
+      await voucherRefetch();
+    } catch (error: any) {
+      console.log("Error updating voucher details:", error);
+
+      let errorDetails = "";
+      if (error?.data) {
+        if (typeof error.data === "string") {
+          errorDetails = error.data;
+        } else if (error.data.errors?.message) {
+          const m = error.data.errors.message;
+          errorDetails = Array.isArray(m) ? m.join("\n") : String(m);
+        } else if (error.data.response?.message) {
+          const m = error.data.response.message;
+          errorDetails = Array.isArray(m) ? m.join("\n") : String(m);
+        } else if (error.data.message) {
+          const m = error.data.message;
+          errorDetails = Array.isArray(m) ? m.join("\n") : String(m);
+        } else if (error.data.error) {
+          errorDetails = String(error.data.error);
+        } else {
+          errorDetails = JSON.stringify(error.data);
+        }
+      } else if (error?.message) {
+        errorDetails = error.message;
+      } else {
+        errorDetails = JSON.stringify(error);
+      }
+
+      alert("API Error: " + errorDetails);
     }
   };
 
@@ -628,7 +781,7 @@ const VoucherPage = () => {
                       <TableCell className="border-x-0">
                         {voucher.discountType === "percentage"
                           ? `${voucher.value}%`
-                          : `₱${voucher.value.toFixed(2)}`}
+                          : formatCurrency(voucher.value)}
                       </TableCell>
                       <TableCell className="border-x-0">
                         {voucher.voucherLimit}
@@ -641,24 +794,13 @@ const VoucherPage = () => {
                       </TableCell>
                       <TableCell className="border-x-0">
                         <Button
-                          variant="outline"
+                          variant="ghost"
                           size="icon"
-                          className="text-[#DF5C5D] border-[#DF5C5D] hover:bg-[#DF5C5D]/10"
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
                           onClick={() => handleOpenEditVoucher(voucher)}
+                          title="Edit Voucher"
                         >
-                          <svg
-                            className="h-5 w-5"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-4.243 1.414 1.414-4.243a4 4 0 01.828-1.414z"
-                            />
-                          </svg>
+                          <Edit className="h-4 w-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -743,24 +885,13 @@ const VoucherPage = () => {
                           </TableCell>
                           <TableCell className="border-x-0">
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="icon"
-                              className="text-[#DF5C5D] border-[#DF5C5D] hover:bg-[#DF5C5D]/10"
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
                               onClick={() => handleOpenEditDiscount(discount)}
+                              title="Edit Discount"
                             >
-                              <svg
-                                className="h-5 w-5"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M15.232 5.232l3.536 3.536M9 13l6.586-6.586a2 2 0 112.828 2.828L11.828 15.828a4 4 0 01-1.414.828l-4.243 1.414 1.414-4.243a4 4 0 01.828-1.414z"
-                                />
-                              </svg>
+                              <Edit className="h-4 w-4" />
                             </Button>
                           </TableCell>
                         </TableRow>
@@ -860,14 +991,13 @@ const VoucherPage = () => {
         </Pagination>
       </div>
 
-      {/* Add Promo Modal */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
-        <DialogContent className="sm:max-w-[800px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[800px] max-h-[85vh] flex flex-col overflow-hidden p-6">
+          <DialogHeader className="shrink-0 pb-2">
             <DialogTitle>Add New Promotion</DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-6 py-4">
+          <div className="space-y-6 py-2 overflow-y-auto pr-1 flex-1">
             {/* Basic Information */}
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-4">
@@ -1426,7 +1556,7 @@ const VoucherPage = () => {
             ) : null}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="pt-3 border-t mt-auto shrink-0">
             <Button variant="outline" onClick={() => setShowAddModal(false)}>
               Cancel
             </Button>
@@ -1471,12 +1601,12 @@ const VoucherPage = () => {
       {/* Edit Voucher Modal */}
 
       <Dialog open={showEditVoucherModal} onOpenChange={setShowEditVoucherModal}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
+        <DialogContent className="sm:max-w-[600px] max-h-[85vh] flex flex-col overflow-hidden p-6">
+          <DialogHeader className="shrink-0 pb-2">
             <DialogTitle>Edit Voucher</DialogTitle>
           </DialogHeader>
           {editVoucherData && (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-2 overflow-y-auto pr-1 flex-1">
               <div className="grid gap-2">
                 <Label htmlFor="editVoucherName">Voucher Name</Label>
                 <Input
@@ -1578,28 +1708,134 @@ const VoucherPage = () => {
                   />
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="editVoucherStatus">Status</Label>
-                <Select
-                  value={editVoucherData.voucherStatus === 1 ? "1" : "0"}
-                  onValueChange={(val) =>
-                    setEditVoucherData((prev) =>
-                      prev ? { ...prev, voucherStatus: parseInt(val, 10) } : null
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">Active</SelectItem>
-                    <SelectItem value="0">Expired / Inactive</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label htmlFor="editVoucherStatus">Status</Label>
+                  <Select
+                    value={editVoucherData.voucherStatus === 1 ? "1" : "0"}
+                    onValueChange={(val) =>
+                      setEditVoucherData((prev) =>
+                        prev ? { ...prev, voucherStatus: parseInt(val, 10) } : null
+                      )
+                    }
+                  >
+                    <SelectTrigger id="editVoucherStatus">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-white z-50">
+                      <SelectItem value="1">Active</SelectItem>
+                      <SelectItem value="0">Expired / Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label htmlFor="editVoucherBranch">Store Branch Target</Label>
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      placeholder="Select store branches"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full pr-10 cursor-pointer"
+                      onClick={() => setOpenEditBranchModal(true)}
+                    />
+                    <ChevronsUpDown
+                      className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground cursor-pointer hover:text-foreground transition-colors"
+                      onClick={() => setOpenEditBranchModal(!openEditBranchModal)}
+                    />
+                  </div>
+                  {openEditBranchModal && (
+                    <div className="fixed inset-0 z-50">
+                      <div
+                        className="absolute top-0 left-0 w-full h-full bg-black/20"
+                        onClick={() => setOpenEditBranchModal(false)}
+                      />
+                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] bg-white rounded-lg shadow-lg">
+                        <div className="p-4">
+                          <div className="mb-4">
+                            <Input
+                              type="text"
+                              placeholder="Search store branches..."
+                              value={searchQuery}
+                              onChange={(e) => setSearchQuery(e.target.value)}
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="max-h-[300px] overflow-auto rounded-md border">
+                            {filteredBranches.length === 0 ? (
+                              <div className="p-4 text-center text-muted-foreground">
+                                No store branch found.
+                              </div>
+                            ) : (
+                              filteredBranches.map((branch) => (
+                                <div
+                                  key={branch.id}
+                                  className="flex items-center p-2 hover:bg-accent cursor-pointer transition-colors"
+                                  onClick={() => toggleEditBranch(branch)}
+                                >
+                                  <Check
+                                    className={cn(
+                                      "mr-2 h-4 w-4",
+                                      editTempTags.some(
+                                        (tag) => tag.id === branch.id
+                                      )
+                                        ? "opacity-100"
+                                        : "opacity-0"
+                                    )}
+                                  />
+                                  <span>{branch.name}</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                          <div className="flex justify-end mt-4 pt-4 border-t">
+                            <Button
+                              type="button"
+                              onClick={handleConfirmEditBranchSelection}
+                              className="bg-[#DF5C5D] hover:bg-[#DF5C5D]/90"
+                            >
+                              OK
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  {editTags.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {editTags.map((tag) => (
+                        <Badge
+                          key={tag.id}
+                          variant="secondary"
+                          className="flex items-center gap-2 px-2 py-1 bg-[#DF5C5D]/20 hover:bg-[#DF5C5D]/30 transition-colors border-[#DF5C5D]"
+                        >
+                          <span className="text-[12px] text-[#DF5C5D] ml-1">
+                            {tag.text}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditTags((prev) =>
+                                prev.filter((t) => t.id !== tag.id)
+                              );
+                              setEditTempTags((prev) =>
+                                prev.filter((t) => t.id !== tag.id)
+                              );
+                            }}
+                            className="ml-1 hover:text-[#DF5C5D] transition-colors"
+                          >
+                            <X className="h-3 w-3 text-[#DF5C5D]" />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="pt-3 border-t mt-auto shrink-0">
             <Button variant="outline" onClick={() => setShowEditVoucherModal(false)}>
               Cancel
             </Button>

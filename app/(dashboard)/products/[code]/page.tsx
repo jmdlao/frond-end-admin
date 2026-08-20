@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import Link from "next/link";
 import { useProductsControllerFindByCodeQuery } from "@/Redux/Services/productsAPpiService";
 
@@ -102,7 +102,96 @@ export default function ProductDetailsPage() {
           </div>
           </div>
 
-        {/* </div> */}
+        {/* Printable Barcode Label Card */}
+        <div className="mt-6">
+          <Card className="border shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-base font-semibold">
+                Barcode Sticker Label
+              </CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-[#DF5C5D] border-[#DF5C5D] hover:bg-[#DF5C5D]/10 print:hidden"
+                onClick={() => window.print()}
+              >
+                <Printer className="w-4 h-4" /> Print Barcode
+              </Button>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-gray-500 mb-4 print:hidden">
+                Print physical barcode label stickers to attach to items for barcode scanning.
+              </p>
+
+              {/* Physical Sticker Preview */}
+              <div
+                id="printable-barcode-sticker"
+                className="w-[320px] p-4 bg-white border-2 border-dashed border-gray-300 rounded-lg mx-auto flex flex-col items-center justify-center text-center shadow-inner"
+              >
+                <span className="text-[10px] font-bold tracking-widest text-gray-400 uppercase">
+                  INTELLISEVEN POS
+                </span>
+                <span className="text-xs font-semibold text-gray-800 truncate max-w-full my-1">
+                  {product.productName || "Product Name"}
+                </span>
+                <span className="text-sm font-bold text-[#DF5C5D] mb-2">
+                  ₱{Number(product.productPrice ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+
+                {/* SVG Barcode Representation */}
+                <div className="w-full bg-white px-2 py-1 flex justify-center items-center">
+                  <svg className="w-full h-12" viewBox="0 0 200 50">
+                    <rect x="0" y="0" width="200" height="50" fill="white" />
+                    {[...Array(35)].map((_, i) => (
+                      <rect
+                        key={i}
+                        x={i * 5.5 + 4}
+                        y="2"
+                        width={i % 3 === 0 ? 3 : i % 5 === 0 ? 1 : 2}
+                        height="40"
+                        fill="black"
+                      />
+                    ))}
+                  </svg>
+                </div>
+
+                <span className="font-mono text-xs tracking-[0.25em] font-semibold text-gray-700 mt-1">
+                  {product.productCode || "0000000000000"}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Print Isolation Styles */}
+        <style jsx global>{`
+          @media print {
+            body * {
+              visibility: hidden !important;
+            }
+            #printable-barcode-sticker,
+            #printable-barcode-sticker * {
+              visibility: visible !important;
+            }
+            #printable-barcode-sticker {
+              position: fixed !important;
+              left: 50% !important;
+              top: 50% !important;
+              transform: translate(-50%, -50%) !important;
+              width: 320px !important;
+              margin: 0 !important;
+              padding: 16px !important;
+              border: 2px solid #000 !important;
+              border-radius: 8px !important;
+              background: #fff !important;
+              box-shadow: none !important;
+            }
+            @page {
+              size: auto;
+              margin: 0;
+            }
+          }
+        `}</style>
       </div>
 
       {/* RIGHT: 1/3 - Product Details Card */}
